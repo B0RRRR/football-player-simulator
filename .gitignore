@@ -1,0 +1,16 @@
+# C++ build directories
+build/
+bin/
+obj/
+
+# Make and CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
