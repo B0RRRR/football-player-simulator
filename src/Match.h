@@ -9,6 +9,12 @@ enum class MatchState {
     Finished
 };
 
+enum class PlayerMatchStatus {
+    Starter,
+    Bench,
+    Out
+};
+
 class Match {
 public:
     Match(Player* player);
@@ -24,12 +30,15 @@ public:
     const std::vector<std::string>& getLogs() const { return m_logs; }
     int getScoreUs() const { return m_scoreUs; }
     int getScoreThem() const { return m_scoreThem; }
+    PlayerMatchStatus getPlayerStatus() const { return m_playerStatus; }
 
 private:
     void addLog(const std::string& msg);
+    void evaluateCoachDecision();
 
     Player* m_player;
     MatchState m_state;
+    PlayerMatchStatus m_playerStatus;
     
     float m_timeAccumulator;
     int m_minute;

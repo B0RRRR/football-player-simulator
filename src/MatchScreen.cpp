@@ -1,19 +1,23 @@
 #include "MatchScreen.h"
+#include "CareerHubScreen.h"
+#include "CareerManager.h"
 #include "MenuScreen.h"
 #include "GameManager.h"
 #include "AssetManager.h"
 
 MatchScreen::MatchScreen() {
-    m_player = new Player("Rookie");
-    m_match = new Match(m_player);
+    m_player = nullptr;
+    m_match = nullptr;
 }
 
 MatchScreen::~MatchScreen() {
     delete m_match;
-    delete m_player;
 }
 
 void MatchScreen::init() {
+    m_player = m_gameManager->getPlayer();
+    m_match = new Match(m_player);
+
     auto& font = AssetManager::get().getFont("MainFont");
     
     m_scoreText.setFont(font);
@@ -79,7 +83,26 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
         }
         else if (m_match->getState() == MatchState::Finished) {
             if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
-                m_gameManager->changeScreen(std::make_shared<MenuScreen>());
+                if (m_backButton.action == "Back") {
+                    // Record results
+                    Club* c = m_gameManager->getPlayer()->currentClub;
+                    if (c) {
+                        int us = m_match->getScoreUs();
+                        int them = m_match->getScoreThem();
+                        if (us > them) {
+                            c->points += 3; c->wins++;
+                        } else if (us == them) {
+                            c->points += 1; c->draws++;
+                        } else {
+                            c->losses++;
+                        }
+                        c->goalsFor += us;
+                        c->goalsAgainst += them;
+                    }
+                    
+                    m_gameManager->getCareerManager()->advanceDay();
+                    m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                }
             }
         }
     }

@@ -1,6 +1,8 @@
 #include "MenuScreen.h"
 #include "SettingsScreen.h"
 #include "MatchScreen.h"
+#include "NewCareerScreen.h"
+#include "UpgradeScreen.h"
 #include "AssetManager.h"
 #include "GameManager.h"
 #include <iostream>
@@ -57,7 +59,7 @@ void MenuScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
                     if (btn.action == "Exit") {
                         window.close();
                     } else if (btn.action == "New Career") {
-                        m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+                        m_gameManager->changeScreen(std::make_shared<NewCareerScreen>());
                     } else if (btn.action == "Settings") {
                         m_gameManager->changeScreen(std::make_shared<SettingsScreen>());
                     }

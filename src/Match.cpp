@@ -1,8 +1,11 @@
 #include "Match.h"
+#include "Player.h"
+#include "Database.h"
 #include "Settings.h"
 #include <cstdlib>
 
 Match::Match(Player* player) : m_player(player), m_state(MatchState::Playing), m_timeAccumulator(0), m_minute(0), m_scoreUs(0), m_scoreThem(0) {
+    evaluateCoachDecision();
     addLog("Match started!");
 }
 
@@ -26,8 +29,30 @@ void Match::update(float deltaTime) {
         if (m_minute >= 90) {
             m_minute = 90;
             m_state = MatchState::Finished;
-            addLog("Referee blows the final whistle!");
+            m_player->experience += 50; // Match completion bonus
+            addLog("Referee blows the final whistle! (+50 XP)");
             return;
+        }
+
+        // Energy drain and substitutions
+        if (m_playerStatus == PlayerMatchStatus::Starter) {
+            // Drain energy roughly ~40 over 90 mins
+            if (rand() % 100 < 45) {
+                m_player->energy -= 1;
+            }
+            if (m_player->energy < 15 && m_minute > 60) {
+                m_playerStatus = PlayerMatchStatus::Bench;
+                addLog("Coach substitutes you out due to exhaustion.");
+            }
+        } else if (m_playerStatus == PlayerMatchStatus::Bench && m_minute > 55) {
+            // Chance to be subbed in (higher if losing)
+            int subChance = 25;
+            if (m_scoreUs < m_scoreThem) subChance = 40;
+            
+            if (rand() % 100 < subChance) {
+                m_playerStatus = PlayerMatchStatus::Starter;
+                addLog("Coach subs you IN! Make an impact!");
+            }
         }
 
         // Random events
@@ -39,9 +64,13 @@ void Match::update(float deltaTime) {
             m_scoreThem++;
             addLog("Opponent scores a goal!");
         } else if (r >= opponentChance && r < opponentChance + 20) {
-            // Trigger key moment for the player
-            m_state = MatchState::KeyMoment;
-            addLog("You receive the ball near the box! What do you do?");
+            // Trigger key moment for the player ONLY if they are playing
+            if (m_playerStatus == PlayerMatchStatus::Starter) {
+                m_state = MatchState::KeyMoment;
+                addLog("You receive the ball near the box! What do you do?");
+            } else {
+                addLog("Your team attacks, but the shot is saved.");
+            }
         } else {
             addLog("Ball is in the midfield...");
         }
@@ -58,7 +87,8 @@ void Match::playerShoot() {
     if (roll < m_player->shooting + modifier) {
         m_scoreUs++;
         m_player->goals++;
-        addLog("GOAL!!! What a fantastic strike by " + m_player->name + "!");
+        m_player->experience += 30;
+        addLog("GOAL!!! What a fantastic strike by " + m_player->name + "! (+30 XP)");
     } else {
         addLog("Miss! The shot goes wide.");
     }
@@ -76,7 +106,8 @@ void Match::playerPass() {
         if (rand() % 100 < 50) {
             m_scoreUs++;
             m_player->assists++;
-            addLog("Great pass! Teammate scores! Assist for " + m_player->name + "!");
+            m_player->experience += 20;
+            addLog("Great pass! Teammate scores! Assist for " + m_player->name + "! (+20 XP)");
         } else {
             addLog("Good pass, but teammate misses the shot.");
         }
@@ -84,4 +115,30 @@ void Match::playerPass() {
         addLog("Bad pass, ball intercepted by defender.");
     }
     m_state = MatchState::Playing;
+}
+
+void Match::evaluateCoachDecision() {
+    if (!m_player->currentClub) {
+        m_playerStatus = PlayerMatchStatus::Starter;
+        return;
+    }
+
+    int clubStr = m_player->currentClub->strength;
+    int playerStr = (m_player->shooting + m_player->passing) / 2; // Rough average
+    
+    // Very tired -> Out
+    if (m_player->energy < 20) {
+        m_playerStatus = PlayerMatchStatus::Out;
+        addLog("Coach decision: You are too tired and left out of the squad.");
+    } 
+    // Moderately tired or stats are way too low -> Bench
+    else if (m_player->energy < 60 || playerStr < clubStr - 25) {
+        m_playerStatus = PlayerMatchStatus::Bench;
+        addLog("Coach decision: You start on the bench.");
+    } 
+    // Fit and decent stats -> Starter
+    else {
+        m_playerStatus = PlayerMatchStatus::Starter;
+        addLog("Coach decision: You are in the starting XI!");
+    }
 }

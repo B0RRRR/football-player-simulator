@@ -5,6 +5,10 @@
 
 GameManager::GameManager() 
 {
+    m_database.init();
+    m_player = new Player("My Player");
+    m_careerManager = new CareerManager(this);
+
     // Initialize window based on settings
     int style = g_settings.isFullscreen ? sf::Style::Fullscreen : sf::Style::Default;
     m_window.create(sf::VideoMode(g_settings.resWidth, g_settings.resHeight), "Football Career Simulator", style);
@@ -13,6 +17,12 @@ GameManager::GameManager()
     // Load global assets here
     AssetManager::get().loadFont("MainFont", "assets/fonts/Roboto-Regular.ttf");
 }
+
+GameManager::~GameManager() {
+    delete m_careerManager;
+    delete m_player;
+}
+
 
 void GameManager::changeScreen(std::shared_ptr<Screen> screen) {
     if (screen) {

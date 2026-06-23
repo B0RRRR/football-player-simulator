@@ -19,9 +19,16 @@ set(SOURCES
     src/GameManager.cpp
     src/MenuScreen.cpp
     src/SettingsScreen.cpp
+    src/NewCareerScreen.cpp
+    src/CareerHubScreen.cpp
+    src/LeagueTableScreen.cpp
+    src/TrainingScreen.cpp
+    src/CareerManager.cpp
     src/Player.cpp
     src/Match.cpp
     src/MatchScreen.cpp
+    src/UpgradeScreen.cpp
+    src/Database.cpp
 )
 
 # Create executable
@@ -29,3 +36,6 @@ add_executable(football_sim ${SOURCES})
 
 # Link SFML libraries
 target_link_libraries(football_sim sfml-graphics sfml-window sfml-system sfml-audio)
+
+# Copy assets folder to build directory
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
