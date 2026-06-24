@@ -112,13 +112,14 @@ void MatchScreen::update(sf::Time deltaTime) {
     m_match->update(deltaTime.asSeconds());
     
     // Update texts
-    m_scoreText.setString("US " + std::to_string(m_match->getScoreUs()) + " - " + std::to_string(m_match->getScoreThem()) + " THEM\n" + std::to_string(m_match->getMinute()) + "'");
+    std::string scoreStr = "US " + std::to_string(m_match->getScoreUs()) + " - " + std::to_string(m_match->getScoreThem()) + " THEM\n" + std::to_string(m_match->getMinute()) + "'";
+    m_scoreText.setString(sf::String::fromUtf8(scoreStr.begin(), scoreStr.end()));
     
     std::string logs;
     for (const auto& l : m_match->getLogs()) {
         logs += l + "\n\n";
     }
-    m_logsText.setString(logs);
+    m_logsText.setString(sf::String::fromUtf8(logs.begin(), logs.end()));
 }
 
 void MatchScreen::draw(sf::RenderWindow& window) {

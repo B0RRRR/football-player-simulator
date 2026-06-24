@@ -18,11 +18,14 @@ set(SOURCES
     src/AssetManager.cpp
     src/GameManager.cpp
     src/MenuScreen.cpp
+    src/SeasonEndScreen.cpp
     src/SettingsScreen.cpp
     src/NewCareerScreen.cpp
     src/CareerHubScreen.cpp
     src/LeagueTableScreen.cpp
     src/TrainingScreen.cpp
+    src/EventScreen.cpp
+    src/TransferScreen.cpp
     src/CareerManager.cpp
     src/Player.cpp
     src/Match.cpp

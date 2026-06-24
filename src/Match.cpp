@@ -34,13 +34,20 @@ void Match::update(float deltaTime) {
             return;
         }
 
-        // Energy drain and substitutions
+        // Energy drain, substitutions, and injuries
         if (m_playerStatus == PlayerMatchStatus::Starter) {
             // Drain energy roughly ~40 over 90 mins
             if (rand() % 100 < 45) {
                 m_player->energy -= 1;
             }
-            if (m_player->energy < 15 && m_minute > 60) {
+            
+            // Injury chance
+            if (rand() % 1000 < 5) { // 0.5% chance per 5 minutes ~ 9% per game
+                m_player->injuredDays = 7 + (rand() % 14); // 1 to 3 weeks
+                m_playerStatus = PlayerMatchStatus::Out;
+                addLog("CRITICAL INJURY! You were tackled hard and had to be carried off the pitch!");
+            }
+            else if (m_player->energy < 15 && m_minute > 60) {
                 m_playerStatus = PlayerMatchStatus::Bench;
                 addLog("Coach substitutes you out due to exhaustion.");
             }
@@ -122,9 +129,19 @@ void Match::evaluateCoachDecision() {
         m_playerStatus = PlayerMatchStatus::Starter;
         return;
     }
+    
+    if (m_player->injuredDays > 0) {
+        m_playerStatus = PlayerMatchStatus::Out;
+        addLog("Coach decision: You are injured and cannot play.");
+        return;
+    }
 
     int clubStr = m_player->currentClub->strength;
-    int playerStr = (m_player->shooting + m_player->passing) / 2; // Rough average
+    int playerStr = (m_player->shooting + m_player->passing + m_player->tackling + m_player->goalkeeping) / 4; 
+    
+    // Apply morale modifier (-10 to +10)
+    int moraleModifier = (m_player->morale - 50) / 5;
+    playerStr += moraleModifier;
     
     // Very tired -> Out
     if (m_player->energy < 20) {

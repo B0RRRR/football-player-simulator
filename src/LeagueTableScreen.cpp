@@ -73,7 +73,8 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
     
     if (!currentLeague) return;
     
-    m_titleText.setString(currentLeague->name + " Standings");
+    std::string titleStr = currentLeague->name + " Standings";
+    m_titleText.setString(sf::String::fromUtf8(titleStr.begin(), titleStr.end()));
     
     // Sort clubs
     std::vector<Club> sortedClubs = currentLeague->clubs;
@@ -86,40 +87,43 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
     });
     
     // Header
-    sf::Text header;
-    header.setFont(font);
-    header.setCharacterSize(20);
-    header.setFillColor(sf::Color::Cyan);
-    header.setPosition(50.f, 80.f);
-    header.setString("POS  CLUB                         PTS   W   D   L   GF  GA  GD");
-    m_tableRows.push_back(header);
+    auto addColumn = [&](const std::string& str, float x, float y, sf::Color color) {
+        sf::Text t;
+        t.setFont(font);
+        t.setCharacterSize(16);
+        t.setFillColor(color);
+        t.setPosition(x, y);
+        t.setString(sf::String::fromUtf8(str.begin(), str.end()));
+        m_tableRows.push_back(t);
+    };
+
+    sf::Color headC = sf::Color::Cyan;
+    addColumn("POS", 50.f, 80.f, headC);
+    addColumn("CLUB", 100.f, 80.f, headC);
+    addColumn("PTS", 350.f, 80.f, headC);
+    addColumn("W", 400.f, 80.f, headC);
+    addColumn("D", 450.f, 80.f, headC);
+    addColumn("L", 500.f, 80.f, headC);
+    addColumn("GF", 550.f, 80.f, headC);
+    addColumn("GA", 600.f, 80.f, headC);
+    addColumn("GD", 650.f, 80.f, headC);
     
-    float startY = 120.f;
+    float startY = 100.f;
+    float rowHeight = 20.f;
     for (size_t i = 0; i < sortedClubs.size(); ++i) {
         const auto& c = sortedClubs[i];
+        sf::Color cColor = (c.name == p->currentClub->name) ? sf::Color::Yellow : sf::Color::White;
+        float y = startY + i * rowHeight;
         
-        std::stringstream ss;
-        ss << std::left << std::setw(4) << (i + 1)
-           << std::setw(28) << c.name
-           << std::setw(6) << c.points
-           << std::setw(4) << c.wins
-           << std::setw(4) << c.draws
-           << std::setw(4) << c.losses
-           << std::setw(4) << c.goalsFor
-           << std::setw(4) << c.goalsAgainst
-           << std::setw(4) << (c.goalsFor - c.goalsAgainst);
-           
-        sf::Text row;
-        row.setFont(font);
-        row.setCharacterSize(20);
-        if (c.name == p->currentClub->name) {
-            row.setFillColor(sf::Color::Yellow);
-        } else {
-            row.setFillColor(sf::Color::White);
-        }
-        row.setPosition(50.f, startY + i * 35.f);
-        row.setString(ss.str());
-        m_tableRows.push_back(row);
+        addColumn(std::to_string(i+1), 50.f, y, cColor);
+        addColumn(c.name, 100.f, y, cColor);
+        addColumn(std::to_string(c.points), 350.f, y, cColor);
+        addColumn(std::to_string(c.wins), 400.f, y, cColor);
+        addColumn(std::to_string(c.draws), 450.f, y, cColor);
+        addColumn(std::to_string(c.losses), 500.f, y, cColor);
+        addColumn(std::to_string(c.goalsFor), 550.f, y, cColor);
+        addColumn(std::to_string(c.goalsAgainst), 600.f, y, cColor);
+        addColumn(std::to_string(c.goalsFor - c.goalsAgainst), 650.f, y, cColor);
     }
 }
 

@@ -17,14 +17,14 @@ void UpgradeScreen::init() {
     m_titleText.setPosition(200.f, 50.f);
     
     m_xpText.setFont(font);
-    m_xpText.setCharacterSize(30);
+    m_xpText.setCharacterSize(26);
     m_xpText.setFillColor(sf::Color::Yellow);
-    m_xpText.setPosition(200.f, 120.f);
+    m_xpText.setPosition(200.f, 100.f);
     
     m_statsText.setFont(font);
-    m_statsText.setCharacterSize(24);
+    m_statsText.setCharacterSize(20);
     m_statsText.setFillColor(sf::Color::White);
-    m_statsText.setPosition(200.f, 180.f);
+    m_statsText.setPosition(200.f, 140.f);
     
     // Setup buttons
     std::vector<std::string> buttonLabels = {
@@ -32,10 +32,12 @@ void UpgradeScreen::init() {
         "Upgrade Passing (100 XP)", 
         "Upgrade Tackling (100 XP)", 
         "Upgrade Goalkeeping (100 XP)", 
+        "Personal Coach ($5000) [+5 All Stats]",
+        "Sports Car ($20000) [+50 Morale]",
         "Back to Menu"
     };
-    std::vector<std::string> actions = {"Shooting", "Passing", "Tackling", "Goalkeeping", "Back"};
-    float startY = 250.f;
+    std::vector<std::string> actions = {"Shooting", "Passing", "Tackling", "Goalkeeping", "Coach", "Car", "Back"};
+    float startY = 280.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
@@ -90,6 +92,20 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
                         player->experience -= UPGRADE_COST;
                         player->goalkeeping++;
                     }
+                } else if (btn.action == "Coach") {
+                    if (player->money >= 5000) {
+                        player->money -= 5000;
+                        player->shooting += 5;
+                        player->passing += 5;
+                        player->tackling += 5;
+                        player->goalkeeping += 5;
+                    }
+                } else if (btn.action == "Car") {
+                    if (player->money >= 20000) {
+                        player->money -= 20000;
+                        player->morale += 50;
+                        if (player->morale > 100) player->morale = 100;
+                    }
                 }
             }
         }
@@ -109,14 +125,12 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
 }
 
 void UpgradeScreen::update(sf::Time deltaTime) {
-    Player* player = m_gameManager->getPlayer();
-    m_xpText.setString("Available XP: " + std::to_string(player->experience));
-    m_statsText.setString(
-        "Shooting: " + std::to_string(player->shooting) + 
-        " | Passing: " + std::to_string(player->passing) + 
-        "\nTackling: " + std::to_string(player->tackling) + 
-        " | Goalkeeping: " + std::to_string(player->goalkeeping)
-    );
+    Player* p = m_gameManager->getPlayer();
+    m_xpText.setString("XP: " + std::to_string(p->experience) + " | Money: $" + std::to_string(p->money));
+    std::string s = "Shooting: " + std::to_string(p->shooting) + " | Passing: " + std::to_string(p->passing) + "\n";
+    s += "Tackling: " + std::to_string(p->tackling) + " | Goalkeeping: " + std::to_string(p->goalkeeping) + "\n";
+    s += "Morale: " + std::to_string(p->morale);
+    m_statsText.setString(s);
 }
 
 void UpgradeScreen::draw(sf::RenderWindow& window) {

@@ -61,12 +61,24 @@ void NewCareerScreen::rebuildButtons() {
         m_titleText.setString("Step 4: Choose Club");
         m_infoText.setString("Pick a team to sign your first contract:");
         
-        const auto* league = m_gameManager->getDatabase().getLeague(m_selectedLeague);
-        if (league) {
-            for (const auto& c : league->clubs) {
-                labels.push_back(c.name + " (STR: " + std::to_string(c.strength) + ")");
-                actions.push_back("CLUB_" + c.name);
+        auto leagues = m_gameManager->getDatabase().getLeagues();
+        std::vector<const Club*> weakClubs;
+        for (const auto& league : leagues) {
+            for (const auto& club : league.clubs) {
+                if (club.strength <= 75) {
+                    weakClubs.push_back(&club);
+                }
             }
+        }
+        
+        if (weakClubs.size() > 6) {
+            std::random_shuffle(weakClubs.begin(), weakClubs.end());
+            weakClubs.resize(6);
+        }
+        
+        for (const auto* c : weakClubs) {
+            labels.push_back(c->name + " (STR: " + std::to_string(c->strength) + ")");
+            actions.push_back("CLUB_" + c->name);
         }
     }
     
@@ -77,7 +89,7 @@ void NewCareerScreen::rebuildButtons() {
         btn.rect.setFillColor(sf::Color(100, 100, 100));
         
         btn.text.setFont(font);
-        btn.text.setString(labels[i]);
+        btn.text.setString(sf::String::fromUtf8(labels[i].begin(), labels[i].end()));
         btn.text.setCharacterSize(18);
         btn.text.setFillColor(sf::Color::White);
         
@@ -136,10 +148,6 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                 
                 if (m_state == SetupState::SelectPosition && btn.action.find("POS_") == 0) {
                     m_selectedPosition = std::stoi(btn.action.substr(4));
-                    m_state = SetupState::SelectLeague;
-                    rebuildButtons();
-                } else if (m_state == SetupState::SelectLeague && btn.action.find("LEAGUE_") == 0) {
-                    m_selectedLeague = btn.action.substr(7);
                     m_state = SetupState::SelectClub;
                     rebuildButtons();
                 } else if (m_state == SetupState::SelectClub && btn.action.find("CLUB_") == 0) {
@@ -149,7 +157,18 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     Player* p = m_gameManager->getPlayer();
                     p->name = m_playerName;
                     p->position = static_cast<PlayerPosition>(m_selectedPosition);
-                    p->currentClub = m_gameManager->getDatabase().getClub(m_selectedLeague, m_selectedClub);
+                    // Find the club object
+                    const Club* selectedClubObj = nullptr;
+                    for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+                        for (const auto& c : l.clubs) {
+                            if (c.name == m_selectedClub) {
+                                selectedClubObj = &c;
+                                break;
+                            }
+                        }
+                    }
+
+                    p->currentClub = const_cast<Club*>(selectedClubObj);
                     p->experience = 0;
                     p->goals = 0;
                     p->assists = 0;

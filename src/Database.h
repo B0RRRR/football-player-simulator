@@ -33,6 +33,8 @@ public:
     const std::vector<League>& getLeagues() const { return m_leagues; }
     const League* getLeague(const std::string& name) const;
     Club* getClub(const std::string& leagueName, const std::string& clubName);
+    
+    void processRelegation();
 
 private:
     std::vector<League> m_leagues;

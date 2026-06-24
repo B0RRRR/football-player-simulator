@@ -41,13 +41,22 @@ void CareerManager::advanceDay() {
         p->energy += 30;
         if (p->energy > 100) p->energy = 100;
     }
+    
+    if (p->injuredDays > 0) {
+        p->injuredDays--;
+    }
+    
     // Match energy is drained during the match itself
     
     if (getDayType() == CalendarDayType::Match) {
         simulateMatchweek();
     }
-    
+    // Advance internal day count
     m_day++;
+    if (m_day % 7 == 0) {
+        p->weeksPlayed++;
+        p->money += p->salary;
+    }
 }
 
 void CareerManager::simulateMatchweek() {
@@ -115,4 +124,37 @@ void CareerManager::simulateMatchweek() {
             }
         }
     }
+}
+
+int CareerManager::getSeasonLength() const {
+    Player* p = m_gameManager->getPlayer();
+    if (!p || !p->currentClub) return 38;
+    
+    for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+        for (const auto& c : l.clubs) {
+            if (c.name == p->currentClub->name) {
+                return (l.clubs.size() - 1) * 2;
+            }
+        }
+    }
+    return 38;
+}
+
+void CareerManager::endSeason() {
+    Player* p = m_gameManager->getPlayer();
+    std::string clubName = "";
+    if (p) {
+        p->age++;
+        p->weeksPlayed = 0;
+        if (p->currentClub) clubName = p->currentClub->name;
+    }
+    m_day = 1;
+    
+    m_gameManager->getDatabase().processRelegation();
+    
+    if (p && !clubName.empty()) {
+        p->currentClub = m_gameManager->getDatabase().getClub("", clubName);
+    }
+    
+    m_gameManager->getDatabase().resetStats();
 }

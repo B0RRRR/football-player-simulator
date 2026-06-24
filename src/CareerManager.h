@@ -16,6 +16,8 @@ public:
     void resetCareer();
     void advanceDay();
     void simulateMatchweek(); // Simulate results for all other clubs
+    void endSeason();
+    int getSeasonLength() const;
 
     int getCurrentDay() const { return m_day; }
     CalendarDayType getDayType() const;
