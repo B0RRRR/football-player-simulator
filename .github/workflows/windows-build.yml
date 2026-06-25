@@ -12,11 +12,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install SFML via vcpkg
-      run: vcpkg install sfml:x64-windows
+    - name: Download SFML 2.6.1
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/SFML/SFML/releases/download/2.6.1/SFML-2.6.1-windows-vc17-64-bit.zip" -OutFile "sfml.zip"
+        Expand-Archive -Path sfml.zip -DestinationPath .
 
     - name: Configure CMake
-      run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+      run: cmake -B build -S . -DSFML_DIR="$PWD/SFML-2.6.1/lib/cmake/SFML"
 
     - name: Build
       run: cmake --build build --config Release
@@ -25,7 +27,7 @@ jobs:
       run: |
         mkdir release
         Copy-Item -Path build\Release\*.exe -Destination release\
-        Copy-Item -Path build\Release\*.dll -Destination release\ -ErrorAction SilentlyContinue
+        Copy-Item -Path SFML-2.6.1\bin\*.dll -Destination release\ -ErrorAction SilentlyContinue
         if (Test-Path assets) { Copy-Item -Path assets -Destination release\assets -Recurse }
 
     - name: Upload Windows Artifact
