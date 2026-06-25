@@ -1,35 +1,42 @@
 #pragma once
 #include "Screen.h"
-#include "Match.h"
-#include "Player.h"
 #include <SFML/Graphics.hpp>
+#include <string>
 #include <vector>
+#include <memory>
+#include "MatchEngine.h"
 
 class MatchScreen : public Screen {
 public:
     MatchScreen();
-    ~MatchScreen();
-    
-    void init() override;
-    void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
-    void update(sf::Time deltaTime) override;
-    void draw(sf::RenderWindow& window) override;
+    ~MatchScreen() = default;
+    virtual void init() override;
+    virtual void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
+    virtual void update(sf::Time deltaTime) override;
+    virtual void draw(sf::RenderWindow& window) override;
 
 private:
-    Player* m_player;
-    Match* m_match;
+    void initMinigame();
+    void updateMinigame(sf::Time deltaTime);
+
+    std::shared_ptr<MatchEngine> m_engine;
     
     sf::Text m_scoreText;
-    sf::Text m_logsText;
+    sf::Text m_timeText;
+    sf::Text m_logText;
+    sf::Text m_statusText;
+    std::vector<std::string> m_visibleLogs;
     
-    struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
-        std::string action;
-    };
+    sf::RectangleShape m_pitchRect;
     
-    std::vector<Button> m_actionButtons; // Shoot, Pass
-    Button m_backButton; // After match finishes
+    // Minigame variables
+    sf::CircleShape m_playerSprite;
+    sf::CircleShape m_ballSprite;
+    sf::CircleShape m_targetSprite; // E.g., goal or teammate
+    sf::CircleShape m_enemySprite;
     
-    void createActionButtons();
+    bool m_minigameActive;
+    float m_minigameTimer;
+    
+    float m_simTimer;
 };

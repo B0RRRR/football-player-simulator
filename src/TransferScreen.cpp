@@ -37,17 +37,18 @@ void TransferScreen::generateOffers() {
     // Add performance bonus
     int performanceBonus = (p->goals * 2 + p->assists) / 10;
     int targetStrength = playerOverall + performanceBonus;
+    if (targetStrength > 90) targetStrength = 90;
     
     // We want clubs with strength within [targetStrength - 5, targetStrength + 5]
     std::vector<Club*> suitableClubs;
-    auto leagues = db.getLeagues();
-    for (auto& l : leagues) {
-        for (auto& c : l.clubs) {
+    const auto& leagues = db.getLeagues();
+    for (const auto& l : leagues) {
+        for (const auto& c : l.clubs) {
             // Can't move to current club
             if (p->currentClub && c.name == p->currentClub->name) continue;
             
             if (abs(c.strength - targetStrength) <= 8) {
-                suitableClubs.push_back(const_cast<Club*>(&c));
+                suitableClubs.push_back(db.getClub(l.name, c.name));
             }
         }
     }

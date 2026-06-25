@@ -91,19 +91,34 @@ void CareerManager::simulateMatchweek() {
     // Since getLeagues() returns const, we'll fetch them from the database
     // Wait, Database getClub gives mutable pointer. Let's just iterate over names.
     
-    std::vector<std::string> otherClubs;
-    for (const auto& c : league->clubs) {
-        if (c.name != p->currentClub->name) {
-            otherClubs.push_back(c.name);
+    int n = league->clubs.size();
+    if (n < 2) return;
+    
+    int numRounds = n - 1;
+    int r = p->weeksPlayed % numRounds;
+    
+    int pIndex = -1;
+    for (int i = 0; i < n; ++i) {
+        if (league->clubs[i].name == p->currentClub->name) {
+            pIndex = i;
+            break;
         }
     }
     
-    // Pair them up
-    // Since it's an odd number of other clubs (e.g. 6 total -> 5 other), one will rest.
-    // We'll just randomly simulate 2 matches.
-    for (size_t i = 0; i + 1 < otherClubs.size(); i += 2) {
-        Club* c1 = m_gameManager->getDatabase().getClub(league->name, otherClubs[i]);
-        Club* c2 = m_gameManager->getDatabase().getClub(league->name, otherClubs[i+1]);
+    auto rotate = [n, r](int x) {
+        if (x == 0) return 0;
+        return 1 + (x - 1 + r) % (n - 1);
+    };
+    
+    for (int i = 0; i < n / 2; ++i) {
+        int t1 = (i == 0) ? 0 : rotate(i);
+        int t2 = rotate(n - 1 - i);
+        
+        // Skip the match involving the player's club, it was already played
+        if (t1 == pIndex || t2 == pIndex) continue;
+        
+        Club* c1 = m_gameManager->getDatabase().getClub(league->name, league->clubs[t1].name);
+        Club* c2 = m_gameManager->getDatabase().getClub(league->name, league->clubs[t2].name);
         
         if (c1 && c2) {
             int chance1 = c1->strength + (rand() % 40 - 20);

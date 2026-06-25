@@ -9,6 +9,8 @@
 #include "SeasonEndScreen.h"
 #include "GameManager.h"
 #include "AssetManager.h"
+#include "MatchEngine.h"
+#include "MatchStatsScreen.h"
 
 CareerHubScreen::CareerHubScreen() {
 }
@@ -53,6 +55,43 @@ void CareerHubScreen::init() {
         btn.action = buttonLabels[i];
         m_buttons.push_back(btn);
     }
+    
+    // DEBUG BUTTONS
+    Button debugMatch;
+    debugMatch.rect.setSize(sf::Vector2f(300.f, 50.f));
+    debugMatch.rect.setPosition(450.f, 350.f);
+    debugMatch.rect.setFillColor(sf::Color(150, 50, 50));
+    
+    debugMatch.text.setFont(font);
+    debugMatch.text.setString("Debug: Skip Match");
+    debugMatch.text.setCharacterSize(20);
+    debugMatch.text.setFillColor(sf::Color::White);
+    
+    sf::FloatRect tr1 = debugMatch.text.getLocalBounds();
+    debugMatch.text.setOrigin(tr1.left + tr1.width/2.0f, tr1.top + tr1.height/2.0f);
+    debugMatch.text.setPosition(debugMatch.rect.getPosition().x + debugMatch.rect.getSize().x/2.0f,
+                                debugMatch.rect.getPosition().y + debugMatch.rect.getSize().y/2.0f);
+    
+    debugMatch.action = "Debug: Skip Match";
+    m_buttons.push_back(debugMatch);
+    
+    Button debugTrain;
+    debugTrain.rect.setSize(sf::Vector2f(300.f, 50.f));
+    debugTrain.rect.setPosition(450.f, 410.f);
+    debugTrain.rect.setFillColor(sf::Color(150, 50, 50));
+    
+    debugTrain.text.setFont(font);
+    debugTrain.text.setString("Debug: Skip Training");
+    debugTrain.text.setCharacterSize(20);
+    debugTrain.text.setFillColor(sf::Color::White);
+    
+    sf::FloatRect tr2 = debugTrain.text.getLocalBounds();
+    debugTrain.text.setOrigin(tr2.left + tr2.width/2.0f, tr2.top + tr2.height/2.0f);
+    debugTrain.text.setPosition(debugTrain.rect.getPosition().x + debugTrain.rect.getSize().x/2.0f,
+                                debugTrain.rect.getPosition().y + debugTrain.rect.getSize().y/2.0f);
+    
+    debugTrain.action = "Debug: Skip Training";
+    m_buttons.push_back(debugTrain);
 }
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -77,8 +116,8 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                         return; // exit loop
                     }
 
-                    // 15% chance of random event on any day
-                    if (rand() % 100 < 15) {
+                    // 15% chance of random event ONLY on Rest days
+                    if (cm->getDayType() == CalendarDayType::Rest && (rand() % 100 < 15)) {
                         m_gameManager->changeScreen(std::make_shared<EventScreen>());
                         return;
                     }
@@ -95,6 +134,66 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     m_gameManager->changeScreen(std::make_shared<UpgradeScreen>());
                 } else if (btn.action == "League Table") {
                     m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
+                } else if (btn.action == "Debug: Skip Match") {
+                    if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Match) {
+                        Player* p = m_gameManager->getPlayer();
+                        Club* opp = nullptr;
+                        const League* lg = nullptr;
+                        for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+                            for (const auto& c : l.clubs) {
+                                if (c.name == p->currentClub->name) {
+                                    lg = &l;
+                                    break;
+                                }
+                            }
+                        }
+                        if (lg) {
+                            int n = lg->clubs.size();
+                            int r = p->weeksPlayed % (n - 1);
+                            
+                            int pIndex = -1;
+                            for (int i = 0; i < n; ++i) {
+                                if (lg->clubs[i].name == p->currentClub->name) {
+                                    pIndex = i;
+                                    break;
+                                }
+                            }
+                            
+                            auto rotate = [n, r](int x) {
+                                if (x == 0) return 0;
+                                return 1 + (x - 1 + r) % (n - 1);
+                            };
+                            
+                            for (int i = 0; i < n / 2; ++i) {
+                                int t1 = (i == 0) ? 0 : rotate(i);
+                                int t2 = rotate(n - 1 - i);
+                                
+                                if (t1 == pIndex) {
+                                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
+                                    break;
+                                } else if (t2 == pIndex) {
+                                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
+                                    break;
+                                }
+                            }
+                        }
+                        std::shared_ptr<MatchEngine> engine = std::make_shared<MatchEngine>(p->currentClub, opp, true, p);
+                        
+                        while (engine->getState() != MatchState::Finished) {
+                            if (engine->getState() == MatchState::Simulating) {
+                                engine->updateMinute();
+                            } else if (engine->getState() == MatchState::MinigameTriggered) {
+                                engine->processMinigameResult(rand() % 2 == 0); // 50% win rate for auto-sim
+                            }
+                        }
+                        m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(engine));
+                    }
+                } else if (btn.action == "Debug: Skip Training") {
+                    if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Training) {
+                        Player* p = m_gameManager->getPlayer();
+                        p->experience += 50;
+                        m_gameManager->getCareerManager()->advanceDay();
+                    }
                 }
             }
         }

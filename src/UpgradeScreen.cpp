@@ -27,19 +27,10 @@ void UpgradeScreen::init() {
     m_statsText.setPosition(200.f, 140.f);
     
     // Setup buttons
-    std::vector<std::string> buttonLabels = {
-        "Upgrade Shooting (100 XP)", 
-        "Upgrade Passing (100 XP)", 
-        "Upgrade Tackling (100 XP)", 
-        "Upgrade Goalkeeping (100 XP)", 
-        "Personal Coach ($5000) [+5 All Stats]",
-        "Sports Car ($20000) [+50 Morale]",
-        "Back to Menu"
-    };
     std::vector<std::string> actions = {"Shooting", "Passing", "Tackling", "Goalkeeping", "Coach", "Car", "Back"};
     float startY = 280.f;
     
-    for (size_t i = 0; i < buttonLabels.size(); ++i) {
+    for (size_t i = 0; i < actions.size(); ++i) {
         Button btn;
         
         btn.rect.setSize(sf::Vector2f(400.f, 40.f));
@@ -47,16 +38,10 @@ void UpgradeScreen::init() {
         btn.rect.setFillColor(sf::Color(100, 100, 100));
         
         btn.text.setFont(font);
-        btn.text.setString(buttonLabels[i]);
+        // Text is set dynamically in update()
+        btn.text.setString("");
         btn.text.setCharacterSize(24);
         btn.text.setFillColor(sf::Color::White);
-        
-        sf::FloatRect textRect = btn.text.getLocalBounds();
-        btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top  + textRect.height/2.0f);
-        btn.text.setPosition(
-            btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-            btn.rect.getPosition().y + btn.rect.getSize().y/2.0f
-        );
         
         btn.action = actions[i];
         m_buttons.push_back(btn);
@@ -73,32 +58,36 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
                 if (btn.action == "Back") {
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
                 } else if (btn.action == "Shooting") {
-                    if (player->experience >= UPGRADE_COST && player->shooting < 100) {
-                        player->experience -= UPGRADE_COST;
+                    int cost = player->shooting * 5;
+                    if (player->experience >= cost && player->shooting < 99) {
+                        player->experience -= cost;
                         player->shooting++;
                     }
                 } else if (btn.action == "Passing") {
-                    if (player->experience >= UPGRADE_COST && player->passing < 100) {
-                        player->experience -= UPGRADE_COST;
+                    int cost = player->passing * 5;
+                    if (player->experience >= cost && player->passing < 99) {
+                        player->experience -= cost;
                         player->passing++;
                     }
                 } else if (btn.action == "Tackling") {
-                    if (player->experience >= UPGRADE_COST && player->tackling < 100) {
-                        player->experience -= UPGRADE_COST;
+                    int cost = player->tackling * 5;
+                    if (player->experience >= cost && player->tackling < 99) {
+                        player->experience -= cost;
                         player->tackling++;
                     }
                 } else if (btn.action == "Goalkeeping") {
-                    if (player->experience >= UPGRADE_COST && player->goalkeeping < 100) {
-                        player->experience -= UPGRADE_COST;
+                    int cost = player->goalkeeping * 5;
+                    if (player->experience >= cost && player->goalkeeping < 99) {
+                        player->experience -= cost;
                         player->goalkeeping++;
                     }
                 } else if (btn.action == "Coach") {
-                    if (player->money >= 5000) {
-                        player->money -= 5000;
-                        player->shooting += 5;
-                        player->passing += 5;
-                        player->tackling += 5;
-                        player->goalkeeping += 5;
+                    if (player->money >= 25000) {
+                        player->money -= 25000;
+                        if (player->shooting < 99) player->shooting += 1;
+                        if (player->passing < 99) player->passing += 1;
+                        if (player->tackling < 99) player->tackling += 1;
+                        if (player->goalkeeping < 99) player->goalkeeping += 1;
                     }
                 } else if (btn.action == "Car") {
                     if (player->money >= 20000) {
@@ -111,7 +100,7 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
         }
     }
     
-    // Hover effect
+    // Hover effects
     if (event.type == sf::Event::MouseMoved) {
         sf::Vector2f mousePos(event.mouseMove.x, event.mouseMove.y);
         for (auto& btn : m_buttons) {
@@ -126,11 +115,43 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
 
 void UpgradeScreen::update(sf::Time deltaTime) {
     Player* p = m_gameManager->getPlayer();
-    m_xpText.setString("XP: " + std::to_string(p->experience) + " | Money: $" + std::to_string(p->money));
-    std::string s = "Shooting: " + std::to_string(p->shooting) + " | Passing: " + std::to_string(p->passing) + "\n";
-    s += "Tackling: " + std::to_string(p->tackling) + " | Goalkeeping: " + std::to_string(p->goalkeeping) + "\n";
-    s += "Morale: " + std::to_string(p->morale);
-    m_statsText.setString(s);
+    if (!p) return;
+    
+    m_xpText.setString("Experience (XP): " + std::to_string(p->experience) + "   Money: $" + std::to_string(p->money));
+    
+    std::string stats = "Shooting: " + std::to_string(p->shooting) + " | " +
+                        "Passing: " + std::to_string(p->passing) + " | " +
+                        "Tackling: " + std::to_string(p->tackling) + " | " +
+                        "Goalkeeping: " + std::to_string(p->goalkeeping) + "\n" +
+                        "Morale: " + std::to_string(p->morale) + "%";
+    m_statsText.setString(stats);
+    
+    // Update button text with dynamic costs
+    for (auto& btn : m_buttons) {
+        if (btn.action == "Shooting") {
+            btn.text.setString("Upgrade Shooting (" + std::to_string(p->shooting * 5) + " XP)");
+        } else if (btn.action == "Passing") {
+            btn.text.setString("Upgrade Passing (" + std::to_string(p->passing * 5) + " XP)");
+        } else if (btn.action == "Tackling") {
+            btn.text.setString("Upgrade Tackling (" + std::to_string(p->tackling * 5) + " XP)");
+        } else if (btn.action == "Goalkeeping") {
+            btn.text.setString("Upgrade Goalkeeping (" + std::to_string(p->goalkeeping * 5) + " XP)");
+        } else if (btn.action == "Coach") {
+            btn.text.setString("Personal Coach ($25000) [+1 All Stats]");
+        } else if (btn.action == "Car") {
+            btn.text.setString("Sports Car ($20000) [+50 Morale]");
+        } else if (btn.action == "Back") {
+            btn.text.setString("Back to Hub");
+        }
+        
+        // Recenter text
+        sf::FloatRect textRect = btn.text.getLocalBounds();
+        btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
+        btn.text.setPosition(
+            btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
+            btn.rect.getPosition().y + btn.rect.getSize().y/2.0f
+        );
+    }
 }
 
 void UpgradeScreen::draw(sf::RenderWindow& window) {
