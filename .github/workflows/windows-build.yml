@@ -1,0 +1,35 @@
+name: Build for Windows
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install SFML via vcpkg
+      run: vcpkg install sfml:x64-windows
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Package Game
+      run: |
+        mkdir release
+        Copy-Item -Path build\Release\*.exe -Destination release\
+        Copy-Item -Path build\Release\*.dll -Destination release\ -ErrorAction SilentlyContinue
+        if (Test-Path assets) { Copy-Item -Path assets -Destination release\assets -Recurse }
+
+    - name: Upload Windows Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: FootballSimulator-Windows
+        path: release/
