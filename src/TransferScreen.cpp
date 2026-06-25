@@ -6,6 +6,7 @@
 #include "AssetManager.h"
 #include <algorithm>
 #include <cstdlib>
+#include <random>
 
 TransferScreen::TransferScreen() {
 }
@@ -54,7 +55,9 @@ void TransferScreen::generateOffers() {
     }
 
     if (suitableClubs.size() > 3) {
-        std::random_shuffle(suitableClubs.begin(), suitableClubs.end());
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(suitableClubs.begin(), suitableClubs.end(), g);
         suitableClubs.resize(3);
     }
 

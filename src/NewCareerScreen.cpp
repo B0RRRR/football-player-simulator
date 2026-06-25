@@ -6,6 +6,7 @@
 #include "GameManager.h"
 #include "AssetManager.h"
 #include <iostream>
+#include <random>
 
 NewCareerScreen::NewCareerScreen() : m_state(SetupState::InputName), m_playerName(""), m_selectedPosition(3) {
 }
@@ -72,7 +73,9 @@ void NewCareerScreen::rebuildButtons() {
         }
         
         if (weakClubs.size() > 6) {
-            std::random_shuffle(weakClubs.begin(), weakClubs.end());
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(weakClubs.begin(), weakClubs.end(), g);
             weakClubs.resize(6);
         }
         
