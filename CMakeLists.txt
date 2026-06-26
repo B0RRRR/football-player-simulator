@@ -28,6 +28,7 @@ set(SOURCES
     src/TrainingScreen.cpp
     src/EventScreen.cpp
     src/TransferScreen.cpp
+    src/EuropeanCupScreen.cpp
     src/CareerManager.cpp
     src/Player.cpp
     src/Match.cpp

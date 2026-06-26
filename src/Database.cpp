@@ -197,3 +197,87 @@ void Database::processRelegation() {
         for (const auto& c : top3) div1.clubs.push_back(c);
     }
 }
+
+void Database::initTournaments(const std::vector<Club*>& clClubs, const std::vector<Club*>& elClubs) {
+    m_championsLeague.name = "Champions League";
+    m_championsLeague.rounds.clear();
+    m_championsLeague.currentRoundIndex = 0;
+    m_championsLeague.isFinished = false;
+    m_championsLeague.winner = nullptr;
+    
+    m_europaLeague.name = "Europa League";
+    m_europaLeague.rounds.clear();
+    m_europaLeague.currentRoundIndex = 0;
+    m_europaLeague.isFinished = false;
+    m_europaLeague.winner = nullptr;
+    
+    auto createRounds = [](Tournament& t, const std::vector<Club*>& clubs) {
+        if (clubs.size() != 16) return;
+        
+        CupRound r16;
+        r16.name = "Round of 16";
+        for (size_t i = 0; i < 8; ++i) {
+            CupMatch m;
+            m.home = clubs[i];
+            m.away = clubs[15 - i]; // Simple seeding
+            r16.matches.push_back(m);
+        }
+        t.rounds.push_back(r16);
+        
+        CupRound qf;
+        qf.name = "Quarter-Finals";
+        for (int i=0; i<4; ++i) qf.matches.push_back(CupMatch());
+        t.rounds.push_back(qf);
+        
+        CupRound sf;
+        sf.name = "Semi-Finals";
+        for (int i=0; i<2; ++i) sf.matches.push_back(CupMatch());
+        t.rounds.push_back(sf);
+        
+        CupRound f;
+        f.name = "Final";
+        CupMatch fm;
+        fm.isFinal = true;
+        f.matches.push_back(fm);
+        t.rounds.push_back(f);
+    };
+    
+    createRounds(m_championsLeague, clClubs);
+    createRounds(m_europaLeague, elClubs);
+}
+
+void Database::advanceTournamentRound(Tournament& t) {
+    if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
+    
+    CupRound& currentRound = t.rounds[t.currentRoundIndex];
+    bool allFinished = true;
+    for (auto& m : currentRound.matches) {
+        if (!m.leg1Played || (!m.leg2Played && !m.isFinal)) {
+            allFinished = false;
+            break;
+        }
+    }
+    
+    if (allFinished) {
+        currentRound.isCompleted = true;
+        t.currentRoundIndex++;
+        
+        if (t.currentRoundIndex < t.rounds.size()) {
+            // Populate next round
+            CupRound& nextRound = t.rounds[t.currentRoundIndex];
+            for (size_t i = 0; i < currentRound.matches.size(); i += 2) {
+                if (i/2 < nextRound.matches.size()) {
+                    nextRound.matches[i/2].home = currentRound.matches[i].winner;
+                    if (i+1 < currentRound.matches.size()) {
+                        nextRound.matches[i/2].away = currentRound.matches[i+1].winner;
+                    }
+                }
+            }
+        } else {
+            t.isFinished = true;
+            if (!currentRound.matches.empty()) {
+                t.winner = currentRound.matches[0].winner;
+            }
+        }
+    }
+}

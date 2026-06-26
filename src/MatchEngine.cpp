@@ -58,43 +58,40 @@ void MatchEngine::updateMinute() {
         // Player's team attacking
         if (m_isHome) m_homeStats.shots++; else m_awayStats.shots++;
         
-        // 30% chance this involves our Player -> Trigger minigame!
-        if (rand() % 100 < 30) {
+        // Minigame only for Forward or Midfielder when attacking
+        bool triggerMinigame = false;
+        if (m_player->position == PlayerPosition::Forward && (rand() % 100 < 40)) triggerMinigame = true;
+        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 30)) triggerMinigame = true;
+        
+        if (triggerMinigame) {
             m_state = MatchState::MinigameTriggered;
+            m_playerTeamAttacking = true;
         } else {
-            simulateAIEvent(); // Player's team AI simulates chance
+            simulateAIEvent(true); // Player's team AI simulates chance
         }
     } else if (randVal < playerTeamChance + oppTeamChance) {
         // Opponent's team attacking
         if (m_isHome) m_awayStats.shots++; else m_homeStats.shots++;
         
-        // 20% chance Player has to defend it -> Minigame! (Especially if defender)
-        if (m_player->position == PlayerPosition::Defender && (rand() % 100 < 40)) {
+        // Minigame only for Defender, Goalkeeper, or Midfielder when defending
+        bool triggerMinigame = false;
+        if (m_player->position == PlayerPosition::Defender && (rand() % 100 < 40)) triggerMinigame = true;
+        if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) triggerMinigame = true;
+        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) triggerMinigame = true;
+        
+        if (triggerMinigame) {
             m_state = MatchState::MinigameTriggered;
-        } else if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) {
-            m_state = MatchState::MinigameTriggered;
-        } else if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) {
-            m_state = MatchState::MinigameTriggered;
+            m_playerTeamAttacking = false;
         } else {
-            simulateAIEvent(); // Opponent simulates chance
+            simulateAIEvent(false); // Opponent simulates chance
         }
     }
 }
 
-void MatchEngine::simulateAIEvent() {
-    // Determine who is attacking based on who got the chance
-    // We already know it's not the player's minigame
-    // We'll just randomly resolve it.
+void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
     // If it's a goal (~15% of shots go in)
     if (rand() % 100 < 15) {
-        // Find who shot it based on strength
-        // Since we didn't pass the attacker/defender context clearly, we'll just flip a coin biased by strength
-        int pStrength = m_playerClub->strength;
-        int oStrength = m_opponentClub->strength;
-        
-        bool playerTeamScores = (rand() % (pStrength + oStrength)) < pStrength;
-        
-        if (playerTeamScores) {
+        if (playerTeamAttacking) {
             if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
             addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!");
         } else {
@@ -142,9 +139,17 @@ void MatchEngine::processMinigameResult(bool success) {
             addLog("GOAL!!! " + m_player->name + " scores a magnificent goal!");
             m_player->goals++;
         } else if (m_player->position == PlayerPosition::Midfielder) {
-            if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
-            addLog("GOAL! " + m_player->name + " provides a beautiful assist!");
-            m_player->assists++;
+            if (m_playerTeamAttacking) {
+                if (rand() % 2 == 0) {
+                    if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
+                    addLog("GOAL! " + m_player->name + " provides a beautiful assist!");
+                    m_player->assists++;
+                } else {
+                    addLog("Great pass! " + m_player->name + " creates a dangerous chance.");
+                }
+            } else {
+                addLog("Great interception! " + m_player->name + " wins the ball back.");
+            }
         } else if (m_player->position == PlayerPosition::Defender) {
             addLog("Great tackle! " + m_player->name + " stops a dangerous attack.");
         } else if (m_player->position == PlayerPosition::Goalkeeper) {

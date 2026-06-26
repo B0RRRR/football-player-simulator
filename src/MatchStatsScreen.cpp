@@ -64,20 +64,64 @@ void MatchStatsScreen::init() {
     Club* hc = m_engine->isHome() ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
     Club* ac = m_engine->isHome() ? m_engine->getOpponentClub() : m_engine->getPlayerClub();
     
-    hc->goalsFor += home.goals;
-    hc->goalsAgainst += away.goals;
-    ac->goalsFor += away.goals;
-    ac->goalsAgainst += home.goals;
-    
-    if (home.goals > away.goals) {
-        hc->points += 3; hc->wins++;
-        ac->losses++;
-    } else if (away.goals > home.goals) {
-        ac->points += 3; ac->wins++;
-        hc->losses++;
+    if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
+        auto updateTournament = [&](Tournament& t) {
+            if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
+            for (auto& m : t.rounds[t.currentRoundIndex].matches) {
+                if ((m.home == hc && m.away == ac) || (m.home == ac && m.away == hc)) {
+                    // Match found!
+                    bool isHomeLeg = (m.home == hc); // the original draw order
+                    if (!m.leg1Played) {
+                        m.homeGoalsLeg1 = isHomeLeg ? home.goals : away.goals;
+                        m.awayGoalsLeg1 = isHomeLeg ? away.goals : home.goals;
+                        m.leg1Played = true;
+                        
+                        if (m.isFinal) {
+                            m.winner = (home.goals > away.goals) ? hc : ((away.goals > home.goals) ? ac : nullptr);
+                            if (!m.winner) m.winner = (rand()%2==0) ? hc : ac; // random pens if user drew final
+                        }
+                    } else if (!m.leg2Played && !m.isFinal) {
+                        m.homeGoalsLeg2 = isHomeLeg ? home.goals : away.goals;
+                        m.awayGoalsLeg2 = isHomeLeg ? away.goals : home.goals;
+                        m.leg2Played = true;
+                        
+                        int aggHome = m.homeGoalsLeg1 + m.homeGoalsLeg2;
+                        int aggAway = m.awayGoalsLeg1 + m.awayGoalsLeg2;
+                        
+                        if (aggHome > aggAway) m.winner = m.home;
+                        else if (aggAway > aggHome) m.winner = m.away;
+                        else {
+                            // Penalties simulated!
+                            m.homePenalties = 4 + rand()%2;
+                            m.awayPenalties = 3 + rand()%3;
+                            if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                            m.winner = (m.homePenalties > m.awayPenalties) ? m.home : m.away;
+                            
+                            // Let the player know about the shootout
+                            m_statsText.setString(m_statsText.getString() + "\n\nAggregate tied! " + m.winner->name + " won on penalties.");
+                        }
+                    }
+                }
+            }
+        };
+        updateTournament(m_gameManager->getDatabase().getChampionsLeague());
+        updateTournament(m_gameManager->getDatabase().getEuropaLeague());
     } else {
-        hc->points += 1; hc->draws++;
-        ac->points += 1; ac->draws++;
+        hc->goalsFor += home.goals;
+        hc->goalsAgainst += away.goals;
+        ac->goalsFor += away.goals;
+        ac->goalsAgainst += home.goals;
+        
+        if (home.goals > away.goals) {
+            hc->points += 3; hc->wins++;
+            ac->losses++;
+        } else if (away.goals > home.goals) {
+            ac->points += 3; ac->wins++;
+            hc->losses++;
+        } else {
+            hc->points += 1; hc->draws++;
+            ac->points += 1; ac->draws++;
+        }
     }
 }
 

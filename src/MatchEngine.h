@@ -45,13 +45,14 @@ public:
     bool isHome() const { return m_isHome; }
 
 private:
-    void simulateAIEvent();
+    void simulateAIEvent(bool playerTeamAttacking);
     void addLog(const std::string& msg);
 
     Club* m_playerClub;
     Club* m_opponentClub;
     Player* m_player;
     bool m_isHome;
+    bool m_playerTeamAttacking;
     
     MatchStats m_homeStats;
     MatchStats m_awayStats;

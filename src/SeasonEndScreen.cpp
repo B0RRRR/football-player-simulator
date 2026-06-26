@@ -3,6 +3,8 @@
 #include "GameManager.h"
 #include "Player.h"
 #include "AssetManager.h"
+#include "LeagueTableScreen.h"
+#include "EuropeanCupScreen.h"
 
 SeasonEndScreen::SeasonEndScreen() {
 }
@@ -26,23 +28,29 @@ void SeasonEndScreen::init() {
     m_infoText.setFillColor(sf::Color(200, 200, 200));
     m_infoText.setPosition(100.f, 300.f);
     
-    Button btnNext;
-    btnNext.rect.setSize(sf::Vector2f(300.f, 50.f));
-    btnNext.rect.setPosition(250.f, 450.f);
-    btnNext.rect.setFillColor(sf::Color(70, 150, 70));
-    
-    btnNext.text.setFont(font);
-    btnNext.text.setString("Proceed to Pre-Season");
-    btnNext.text.setCharacterSize(20);
-    btnNext.text.setFillColor(sf::Color::White);
-    
-    sf::FloatRect tr = btnNext.text.getLocalBounds();
-    btnNext.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
-    btnNext.text.setPosition(btnNext.rect.getPosition().x + btnNext.rect.getSize().x/2.0f,
-                             btnNext.rect.getPosition().y + btnNext.rect.getSize().y/2.0f);
+    auto createBtn = [&](const std::string& text, float y, const std::string& action, sf::Color color) {
+        Button btn;
+        btn.rect.setSize(sf::Vector2f(300.f, 50.f));
+        btn.rect.setPosition(250.f, y);
+        btn.rect.setFillColor(color);
+        
+        btn.text.setFont(font);
+        btn.text.setString(text);
+        btn.text.setCharacterSize(20);
+        btn.text.setFillColor(sf::Color::White);
+        
+        sf::FloatRect tr = btn.text.getLocalBounds();
+        btn.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
+        btn.text.setPosition(btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
+                             btn.rect.getPosition().y + btn.rect.getSize().y/2.0f);
                              
-    btnNext.action = "NEXT";
-    m_buttons.push_back(btnNext);
+        btn.action = action;
+        m_buttons.push_back(btn);
+    };
+    
+    createBtn("View League Table", 400.f, "LEAGUE", sf::Color(70, 70, 150));
+    createBtn("View European Cups", 460.f, "CUPS", sf::Color(150, 100, 50));
+    createBtn("Proceed to Pre-Season", 520.f, "NEXT", sf::Color(70, 150, 70));
 }
 
 void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -56,6 +64,10 @@ void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     
                     // Force transfer screen
                     m_gameManager->changeScreen(std::make_shared<TransferScreen>());
+                } else if (btn.action == "LEAGUE") {
+                    m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
+                } else if (btn.action == "CUPS") {
+                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
                 }
             }
         }

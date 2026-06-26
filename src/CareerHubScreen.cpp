@@ -11,6 +11,7 @@
 #include "AssetManager.h"
 #include "MatchEngine.h"
 #include "MatchStatsScreen.h"
+#include "EuropeanCupScreen.h"
 
 CareerHubScreen::CareerHubScreen() {
 }
@@ -33,8 +34,8 @@ void CareerHubScreen::init() {
     m_calendarText.setFillColor(sf::Color::Yellow);
     m_calendarText.setPosition(450.f, 100.f);
     
-    std::vector<std::string> buttonLabels = {"Advance Day", "Upgrades", "League Table", "Quit to Menu"};
-    float startY = 350.f;
+    std::vector<std::string> buttonLabels = {"Advance Day", "Upgrades", "League Table", "European Cups", "Quit to Menu"};
+    float startY = 320.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
@@ -92,6 +93,24 @@ void CareerHubScreen::init() {
     
     debugTrain.action = "Debug: Skip Training";
     m_buttons.push_back(debugTrain);
+    
+    Button debugSeason;
+    debugSeason.rect.setSize(sf::Vector2f(300.f, 50.f));
+    debugSeason.rect.setPosition(450.f, 470.f);
+    debugSeason.rect.setFillColor(sf::Color(150, 50, 50));
+    
+    debugSeason.text.setFont(font);
+    debugSeason.text.setString("Debug: Skip Season");
+    debugSeason.text.setCharacterSize(20);
+    debugSeason.text.setFillColor(sf::Color::White);
+    
+    sf::FloatRect tr3 = debugSeason.text.getLocalBounds();
+    debugSeason.text.setOrigin(tr3.left + tr3.width/2.0f, tr3.top + tr3.height/2.0f);
+    debugSeason.text.setPosition(debugSeason.rect.getPosition().x + debugSeason.rect.getSize().x/2.0f,
+                                 debugSeason.rect.getPosition().y + debugSeason.rect.getSize().y/2.0f);
+                                 
+    debugSeason.action = "Debug: Skip Season";
+    m_buttons.push_back(debugSeason);
 }
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -100,7 +119,9 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                if (btn.action == "Quit to Menu") {
+                if (btn.action == "European Cups") {
+                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
+                } else if (btn.action == "Quit to Menu") {
                     m_gameManager->changeScreen(std::make_shared<MenuScreen>());
                 } else if (btn.action == "View Offers") {
                     m_gameManager->changeScreen(std::make_shared<TransferScreen>());
@@ -138,46 +159,56 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Match) {
                         Player* p = m_gameManager->getPlayer();
                         Club* opp = nullptr;
-                        const League* lg = nullptr;
-                        for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-                            for (const auto& c : l.clubs) {
-                                if (c.name == p->currentClub->name) {
-                                    lg = &l;
-                                    break;
-                                }
-                            }
-                        }
-                        if (lg) {
-                            int n = lg->clubs.size();
-                            int r = p->weeksPlayed % (n - 1);
-                            
-                            int pIndex = -1;
-                            for (int i = 0; i < n; ++i) {
-                                if (lg->clubs[i].name == p->currentClub->name) {
-                                    pIndex = i;
-                                    break;
+                        bool isHomeMatch = true;
+                        
+                        if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
+                            opp = m_gameManager->getCareerManager()->getTodayOpponent();
+                            isHomeMatch = m_gameManager->getCareerManager()->isHomeMatchToday();
+                        } else {
+                            const League* lg = nullptr;
+                            for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+                                for (const auto& c : l.clubs) {
+                                    if (c.name == p->currentClub->name) {
+                                        lg = &l;
+                                        break;
+                                    }
                                 }
                             }
                             
-                            auto rotate = [n, r](int x) {
-                                if (x == 0) return 0;
-                                return 1 + (x - 1 + r) % (n - 1);
-                            };
-                            
-                            for (int i = 0; i < n / 2; ++i) {
-                                int t1 = (i == 0) ? 0 : rotate(i);
-                                int t2 = rotate(n - 1 - i);
+                            if (lg) {
+                                int n = lg->clubs.size();
+                                int r = p->weeksPlayed % (n - 1);
                                 
-                                if (t1 == pIndex) {
-                                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
-                                    break;
-                                } else if (t2 == pIndex) {
-                                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
-                                    break;
+                                int pIndex = -1;
+                                for (int i = 0; i < n; ++i) {
+                                    if (lg->clubs[i].name == p->currentClub->name) {
+                                        pIndex = i;
+                                        break;
+                                    }
+                                }
+                                
+                                auto rotate = [n, r](int x) {
+                                    if (x == 0) return 0;
+                                    return 1 + (x - 1 + r) % (n - 1);
+                                };
+                                
+                                for (int i = 0; i < n / 2; ++i) {
+                                    int t1 = (i == 0) ? 0 : rotate(i);
+                                    int t2 = rotate(n - 1 - i);
+                                    
+                                    if (t1 == pIndex) {
+                                        opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
+                                        break;
+                                    } else if (t2 == pIndex) {
+                                        opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
+                                        isHomeMatch = false;
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        std::shared_ptr<MatchEngine> engine = std::make_shared<MatchEngine>(p->currentClub, opp, true, p);
+                        
+                        std::shared_ptr<MatchEngine> engine = std::make_shared<MatchEngine>(isHomeMatch ? p->currentClub : opp, isHomeMatch ? opp : p->currentClub, isHomeMatch, p);
                         
                         while (engine->getState() != MatchState::Finished) {
                             if (engine->getState() == MatchState::Simulating) {
@@ -194,6 +225,8 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                         p->experience += 50;
                         m_gameManager->getCareerManager()->advanceDay();
                     }
+                } else if (btn.action == "Debug: Skip Season") {
+                    m_gameManager->getCareerManager()->skipSeason();
                 }
             }
         }

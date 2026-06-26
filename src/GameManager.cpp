@@ -37,6 +37,9 @@ void GameManager::run() {
     
     while (m_window.isOpen()) {
         sf::Time deltaTime = clock.restart();
+        if (deltaTime.asSeconds() > 0.1f) {
+            deltaTime = sf::seconds(0.1f); // Cap delta time to prevent physics explosions and freezing after resuming
+        }
         
         // Handle events
         sf::Event event;

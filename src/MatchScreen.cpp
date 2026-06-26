@@ -222,10 +222,10 @@ void MatchScreen::initMinigame() {
         m_ballSprite.setPosition(400.f, 400.f);
         m_targetSprite.setPosition(150.f + (rand()%400), 280.f);
         m_targetSprite.setRadius(25.f);
-        // Enemy defender
-        m_enemySprite.setPosition(380.f, 340.f);
-        m_enemyDir = 1.f;
-        m_enemySpeed = 50.f + ((100.f - p->passing) * 2.f); // Faster if passing is low
+        // Enemy defender spawns in the passing lane
+        m_enemySprite.setPosition(m_targetSprite.getPosition().x, 340.f);
+        m_enemyDir = (rand()%2 == 0) ? 1.f : -1.f;
+        m_enemySpeed = 80.f + ((100.f - p->passing) * 3.f); // Made slightly faster
     } else if (p->position == PlayerPosition::Defender) {
         m_playerSprite.setPosition(380.f, 450.f);
         m_targetSprite.setPosition(380.f, 400.f);

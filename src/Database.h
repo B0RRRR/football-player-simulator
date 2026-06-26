@@ -20,6 +20,35 @@ struct League {
     std::vector<Club> clubs;
 };
 
+struct CupMatch {
+    Club* home = nullptr;
+    Club* away = nullptr;
+    int homeGoalsLeg1 = 0;
+    int awayGoalsLeg1 = 0;
+    int homeGoalsLeg2 = 0;
+    int awayGoalsLeg2 = 0;
+    int homePenalties = 0;
+    int awayPenalties = 0;
+    bool leg1Played = false;
+    bool leg2Played = false;
+    bool isFinal = false;
+    Club* winner = nullptr;
+};
+
+struct CupRound {
+    std::string name;
+    std::vector<CupMatch> matches;
+    bool isCompleted = false;
+};
+
+struct Tournament {
+    std::string name;
+    std::vector<CupRound> rounds;
+    int currentRoundIndex = 0;
+    bool isFinished = false;
+    Club* winner = nullptr;
+};
+
 class Database {
 public:
     Database();
@@ -35,7 +64,15 @@ public:
     Club* getClub(const std::string& leagueName, const std::string& clubName);
     
     void processRelegation();
+    
+    void initTournaments(const std::vector<Club*>& clClubs, const std::vector<Club*>& elClubs);
+    void advanceTournamentRound(Tournament& t);
+    
+    Tournament& getChampionsLeague() { return m_championsLeague; }
+    Tournament& getEuropaLeague() { return m_europaLeague; }
 
 private:
     std::vector<League> m_leagues;
+    Tournament m_championsLeague;
+    Tournament m_europaLeague;
 };
