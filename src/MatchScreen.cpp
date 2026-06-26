@@ -92,36 +92,60 @@ void MatchScreen::init() {
     m_targetSprite.setFillColor(sf::Color(255, 255, 255, 100)); // Semi transparent
     m_enemySprite.setRadius(10.f);
     m_enemySprite.setFillColor(sf::Color::Red);
+    
+    m_promptText.setFont(font);
+    m_promptText.setCharacterSize(24);
+    m_promptText.setFillColor(sf::Color::Yellow);
+    m_promptText.setString("Press SPACE to Tackle!");
+    m_promptText.setPosition(250.f, 200.f);
 }
 
 void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (m_minigameActive && event.type == sf::Event::MouseButtonPressed) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
-        
+    if (m_minigameActive) {
         Player* p = m_gameManager->getPlayer();
-        if (p->position == PlayerPosition::Forward || p->position == PlayerPosition::Midfielder) {
-            // Shoot/Pass towards mouse
-            if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
-                m_engine->processMinigameResult(true);
-            } else {
-                m_engine->processMinigameResult(false);
+        
+        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+            sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+            
+            if (p->position == PlayerPosition::Forward || p->position == PlayerPosition::Goalkeeper) {
+                // Shoot or Save towards mouse
+                if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
+                    m_engine->processMinigameResult(true);
+                } else {
+                    m_engine->processMinigameResult(false);
+                }
+                m_minigameActive = false;
+            } else if (p->position == PlayerPosition::Midfielder) {
+                // Shoot towards mouse, but check line of sight intersection with enemy
+                if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
+                    // Check intersection
+                    sf::Vector2f pPos = m_playerSprite.getPosition();
+                    sf::Vector2f ePos = m_enemySprite.getPosition();
+                    // Basic check: if enemy is in the middle of X and roughly similar Y
+                    float minX = std::min(pPos.x, mousePos.x);
+                    float maxX = std::max(pPos.x, mousePos.x);
+                    if (ePos.x > minX - 20.f && ePos.x < maxX + 20.f && std::abs(ePos.y - mousePos.y) < 40.f) {
+                        // Intercepted!
+                        m_engine->processMinigameResult(false);
+                    } else {
+                        m_engine->processMinigameResult(true);
+                    }
+                } else {
+                    m_engine->processMinigameResult(false);
+                }
+                m_minigameActive = false;
             }
-            m_minigameActive = false;
-        } else if (p->position == PlayerPosition::Defender) {
-            // Timing minigame
-            if (m_enemySprite.getGlobalBounds().intersects(m_targetSprite.getGlobalBounds())) {
-                m_engine->processMinigameResult(true);
-            } else {
-                m_engine->processMinigameResult(false);
+        }
+        else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
+            if (p->position == PlayerPosition::Defender) {
+                // Timing minigame
+                if (m_enemySprite.getGlobalBounds().intersects(m_targetSprite.getGlobalBounds())) {
+                    m_engine->processMinigameResult(true);
+                } else {
+                    m_engine->processMinigameResult(false);
+                }
+                m_minigameActive = false;
             }
-            m_minigameActive = false;
-        } else if (p->position == PlayerPosition::Goalkeeper) {
-            if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
-                m_engine->processMinigameResult(true);
-            } else {
-                m_engine->processMinigameResult(false);
-            }
-            m_minigameActive = false;
         }
     }
 }
@@ -182,32 +206,69 @@ void MatchScreen::initMinigame() {
     Player* p = m_gameManager->getPlayer();
     m_minigameTimer = 0.f;
     
+    // Scale difficulty
+    int oppStrength = m_engine->getOpponentClub()->strength;
+    
     if (p->position == PlayerPosition::Forward) {
         m_playerSprite.setPosition(380.f, 450.f);
         m_ballSprite.setPosition(400.f, 450.f);
-        // Goal area
-        m_targetSprite.setPosition(380.f + (rand()%200 - 100), 280.f); 
+        m_targetSprite.setPosition(380.f, 280.f); 
+        m_targetDir = 1.f;
+        // Make target smaller if shooting is low
+        float r = 10.f + (p->shooting / 100.f) * 30.f;
+        m_targetSprite.setRadius(r);
     } else if (p->position == PlayerPosition::Midfielder) {
         m_playerSprite.setPosition(380.f, 400.f);
         m_ballSprite.setPosition(400.f, 400.f);
-        m_targetSprite.setPosition(150.f + (rand()%400), 300.f + (rand()%100));
+        m_targetSprite.setPosition(150.f + (rand()%400), 280.f);
+        m_targetSprite.setRadius(25.f);
+        // Enemy defender
+        m_enemySprite.setPosition(380.f, 340.f);
+        m_enemyDir = 1.f;
+        m_enemySpeed = 50.f + ((100.f - p->passing) * 2.f); // Faster if passing is low
     } else if (p->position == PlayerPosition::Defender) {
         m_playerSprite.setPosition(380.f, 450.f);
         m_targetSprite.setPosition(380.f, 400.f);
         m_enemySprite.setPosition(380.f, 250.f);
         m_ballSprite.setPosition(m_enemySprite.getPosition());
+        m_enemySpeed = 80.f + ((100.f - p->tackling) * 2.f) + (oppStrength * 1.5f);
     } else if (p->position == PlayerPosition::Goalkeeper) {
         m_playerSprite.setPosition(380.f, 280.f);
         m_ballSprite.setPosition(380.f, 450.f);
         m_targetSprite.setPosition(250.f + (rand()%260), 280.f + (rand()%50));
+        m_targetSprite.setRadius(30.f);
     }
 }
 
 void MatchScreen::updateMinigame(sf::Time deltaTime) {
     Player* p = m_gameManager->getPlayer();
+    float dt = deltaTime.asSeconds();
     
-    if (p->position == PlayerPosition::Defender) {
-        m_enemySprite.move(0, 80.f * deltaTime.asSeconds());
+    if (p->position == PlayerPosition::Forward) {
+        m_minigameTimer += dt;
+        
+        float speed = 50.f + ((100.f - p->shooting) * 2.f);
+        m_targetSprite.move(m_targetDir * speed * dt, 0.f);
+        if (m_targetSprite.getPosition().x < 120.f) m_targetDir = 1.f;
+        if (m_targetSprite.getPosition().x > 680.f - m_targetSprite.getRadius()*2.f) m_targetDir = -1.f;
+        
+        if (m_minigameTimer > 5.0f) {
+            m_engine->processMinigameResult(false);
+            m_minigameActive = false;
+        }
+    } else if (p->position == PlayerPosition::Midfielder) {
+        m_minigameTimer += dt;
+        
+        m_enemySprite.move(m_enemyDir * m_enemySpeed * dt, 0.f);
+        if (m_enemySprite.getPosition().x < 150.f) m_enemyDir = 1.f;
+        if (m_enemySprite.getPosition().x > 650.f) m_enemyDir = -1.f;
+        
+        if (m_minigameTimer > 5.0f) {
+            m_engine->processMinigameResult(false);
+            m_minigameActive = false;
+        }
+    } else if (p->position == PlayerPosition::Defender) {
+        m_enemySprite.move(0, m_enemySpeed * dt);
         m_ballSprite.setPosition(m_enemySprite.getPosition());
         
         if (m_enemySprite.getPosition().y > 500.f) {
@@ -215,17 +276,13 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
             m_minigameActive = false;
         }
     } else if (p->position == PlayerPosition::Goalkeeper) {
-        m_minigameTimer += deltaTime.asSeconds();
-        // move ball towards target area
-        m_ballSprite.move((m_targetSprite.getPosition().x - 380.f) * deltaTime.asSeconds() / 3.f,
-                          (m_targetSprite.getPosition().y - 450.f) * deltaTime.asSeconds() / 3.f);
-        if (m_minigameTimer > 3.0f) { // 3 seconds to react
-            m_engine->processMinigameResult(false);
-            m_minigameActive = false;
-        }
-    } else {
-        m_minigameTimer += deltaTime.asSeconds();
-        if (m_minigameTimer > 5.0f) { // 5 seconds to react
+        m_minigameTimer += dt;
+        
+        float ballSpeed = 1.f + ((100.f - p->goalkeeping) / 50.f);
+        m_ballSprite.move((m_targetSprite.getPosition().x - 380.f) * dt / ballSpeed,
+                          (m_targetSprite.getPosition().y - 450.f) * dt / ballSpeed);
+                          
+        if (m_minigameTimer > ballSpeed) { 
             m_engine->processMinigameResult(false);
             m_minigameActive = false;
         }
@@ -246,8 +303,11 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         window.draw(m_targetSprite);
         window.draw(m_playerSprite);
         
-        if (p->position == PlayerPosition::Defender) {
+        if (p->position == PlayerPosition::Defender || p->position == PlayerPosition::Midfielder) {
             window.draw(m_enemySprite);
+        }
+        if (p->position == PlayerPosition::Defender) {
+            window.draw(m_promptText);
         }
         
         window.draw(m_ballSprite);

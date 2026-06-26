@@ -38,5 +38,11 @@ private:
     bool m_minigameActive;
     float m_minigameTimer;
     
+    // New dynamic minigame variables
+    float m_targetDir;
+    float m_enemyDir;
+    float m_enemySpeed;
+    sf::Text m_promptText;
+    
     float m_simTimer;
 };

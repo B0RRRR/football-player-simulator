@@ -36,13 +36,24 @@ void TrainingScreen::init() {
     m_btnText.setPosition(400.f, 475.f);
 
     std::string role;
-    if (p->position == PlayerPosition::Forward) role = "Shooting Drill";
-    else if (p->position == PlayerPosition::Midfielder) role = "Passing Drill";
-    else if (p->position == PlayerPosition::Defender) role = "Tackling Drill";
-    else if (p->position == PlayerPosition::Goalkeeper) role = "Goalkeeping Drill";
+    if (p->position == PlayerPosition::Forward) {
+        role = "Shooting Drill";
+        m_infoText.setString("Press SPACE when the bar is green to shoot.\nEnergy cost: -15.");
+    }
+    else if (p->position == PlayerPosition::Midfielder) {
+        role = "Passing Drill";
+        m_infoText.setString("Click on teammates to pass.\nEnergy cost: -15.");
+    }
+    else if (p->position == PlayerPosition::Defender) {
+        role = "Tackling Drill";
+        m_infoText.setString("Press SPACE to Tackle when attacker is in zone.\nEnergy cost: -15.");
+    }
+    else if (p->position == PlayerPosition::Goalkeeper) {
+        role = "Goalkeeping Drill";
+        m_infoText.setString("Click on falling balls to save them.\nEnergy cost: -15.");
+    }
     
     m_mainText.setString("Training: " + role);
-    m_infoText.setString("Follow the instructions to earn XP.\nEnergy cost: -15.");
 }
 
 void TrainingScreen::initGame() {
@@ -93,7 +104,8 @@ void TrainingScreen::initGame() {
         m_attacker.setSize(sf::Vector2f(20.f, 20.f));
         m_attacker.setPosition(400.f - 10.f, 50.f);
         m_attacker.setFillColor(sf::Color::Red);
-        m_attackerSpeed = 200.f;
+        m_attackerSpeed = 200.f + ((100.f - p->tackling) * 2.f);
+        m_attackerDirX = 1.0f;
     }
     else if (p->position == PlayerPosition::Goalkeeper) {
         m_maxScore = 10;
@@ -190,7 +202,8 @@ void TrainingScreen::updateGame(float dt) {
     
     if (p->position == PlayerPosition::Forward) {
         // Target moving
-        m_targetRect.move(m_targetDir * 300.f * dt, 0.f);
+        float targetSpeed = 100.f + ((100.f - p->shooting) * 4.f);
+        m_targetRect.move(m_targetDir * targetSpeed * dt, 0.f);
         if (m_targetRect.getPosition().x < 200.f) {
             m_targetRect.setPosition(200.f, m_targetRect.getPosition().y);
             m_targetDir = 1.f;
@@ -200,7 +213,8 @@ void TrainingScreen::updateGame(float dt) {
         }
         
         // Power bar
-        m_powerValue += m_powerDir * 150.f * dt;
+        float powerSpeed = 150.f + ((100.f - p->shooting) * 2.f);
+        m_powerValue += m_powerDir * powerSpeed * dt;
         if (m_powerValue > 100.f) {
             m_powerValue = 100.f;
             m_powerDir = -1.f;
@@ -220,7 +234,7 @@ void TrainingScreen::updateGame(float dt) {
             float rx = 100.f + (rand() % 600);
             float ry = 100.f + (rand() % 400);
             t.shape.setPosition(rx, ry);
-            t.timeAlive = 1.5f;
+            t.timeAlive = 0.5f + (p->passing / 100.f) * 1.5f; // Less time if passing is low
             m_teammates.push_back(t);
             m_spawnTimer = 0.8f;
         }
@@ -232,8 +246,9 @@ void TrainingScreen::updateGame(float dt) {
                 it = m_teammates.erase(it);
             } else {
                 // Fade out
+                float totalAlive = 0.5f + (p->passing / 100.f) * 1.5f;
                 sf::Color c = it->shape.getFillColor();
-                c.a = static_cast<sf::Uint8>((it->timeAlive / 1.5f) * 255);
+                c.a = static_cast<sf::Uint8>((it->timeAlive / totalAlive) * 255);
                 it->shape.setFillColor(c);
                 ++it;
             }
@@ -242,11 +257,18 @@ void TrainingScreen::updateGame(float dt) {
         if (m_passesAttempted >= m_maxScore) finishGame();
     }
     else if (p->position == PlayerPosition::Defender) {
-        m_attacker.move(0.f, m_attackerSpeed * dt);
+        float horizontalSpeed = 100.f + ((100.f - p->tackling) * 3.f);
+        m_attacker.move(m_attackerDirX * horizontalSpeed * dt, m_attackerSpeed * dt);
+        
+        // Zigzag logic
+        if (m_attacker.getPosition().x < 200.f) m_attackerDirX = 1.0f;
+        if (m_attacker.getPosition().x > 600.f) m_attackerDirX = -1.0f;
+        
         if (m_attacker.getPosition().y > 600.f) {
             m_tacklesAttempted++;
             m_attacker.setPosition(400.f - 10.f, 50.f);
-            m_attackerSpeed += 50.f;
+            m_attackerSpeed += 30.f;
+            m_attackerDirX = (rand() % 2 == 0) ? 1.0f : -1.0f;
         }
         if (m_tacklesAttempted >= m_maxScore) finishGame();
     }
@@ -256,15 +278,17 @@ void TrainingScreen::updateGame(float dt) {
             Ball b;
             b.shape.setRadius(15.f);
             b.shape.setFillColor(sf::Color::White);
-            float sx = rand() % 800;
-            b.shape.setPosition(sx, 0.f);
-            
+            float rx = 100.f + (rand() % 600);
+            b.shape.setPosition(rx, -50.f);
             float targetX = 100.f + (rand() % 600);
-            float targetY = 400.f; // Middle of goal
-            float dx = targetX - sx;
-            float dy = targetY - 0.f;
+            float targetY = 400.f;
+            float dx = targetX - rx;
+            float dy = targetY - (-50.f);
             float len = std::sqrt(dx*dx + dy*dy);
-            b.dir = sf::Vector2f(dx/len, dy/len);
+            
+            // Adjust base speed based on stats
+            float baseSpeedMultiplier = 0.5f + ((100.f - p->goalkeeping) / 100.f) * 1.5f;
+            b.dir = sf::Vector2f((dx/len) * baseSpeedMultiplier, (dy/len) * baseSpeedMultiplier);
             
             m_balls.push_back(b);
             m_ballSpawnTimer = 0.6f;

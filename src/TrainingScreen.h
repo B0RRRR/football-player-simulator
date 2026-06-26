@@ -60,6 +60,7 @@ private:
     sf::CircleShape m_tackleZone;
     sf::RectangleShape m_attacker;
     float m_attackerSpeed;
+    float m_attackerDirX;
     int m_tacklesAttempted;
 
     // Goalkeeper (Saving)
