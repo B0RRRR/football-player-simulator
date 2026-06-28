@@ -34,5 +34,11 @@ public:
     int money = 0; // Accumulated money
     
     int age = 18; // Age of the player;
-    int weeksPlayed;
+    int weeksPlayed = 0;
+    
+    std::string nationality;
+    bool isCalledUp = false;
+    
+    float totalSeasonRating = 0.0f;
+    int matchesPlayedThisSeason = 0;
 };

@@ -6,6 +6,7 @@
 
 enum class SetupState {
     InputName,
+    SelectNationality,
     SelectPosition,
     SelectLeague,
     SelectClub
@@ -26,6 +27,7 @@ private:
     SetupState m_state;
     
     std::string m_playerName;
+    std::string m_selectedNationality;
     int m_selectedPosition; // 0..3
     std::string m_selectedLeague;
     std::string m_selectedClub;

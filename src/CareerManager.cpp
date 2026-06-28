@@ -124,6 +124,72 @@ bool CareerManager::isHomeMatchToday() const {
     }
 }
 
+bool CareerManager::hasInternationalMatchToday() const {
+    if (!m_isSummerBreak || m_summerDay % 3 != 0) return false;
+    Player* p = m_gameManager->getPlayer();
+    if (!p || !p->isCalledUp) return false;
+    
+    Database& db = m_gameManager->getDatabase();
+    Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+    if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return false;
+    
+    for (const auto& m : t.rounds[t.currentRoundIndex].matches) {
+        if (!m.leg1Played && (m.home->name == p->nationality || m.away->name == p->nationality)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CareerManager::hasRemainingInternationalMatches() const {
+    if (!m_isSummerBreak) return false;
+    Player* p = m_gameManager->getPlayer();
+    if (!p || !p->isCalledUp) return false;
+    
+    Database& db = m_gameManager->getDatabase();
+    Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+    if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return false;
+    
+    for (const auto& m : t.rounds[t.currentRoundIndex].matches) {
+        if (m.home->name == p->nationality || m.away->name == p->nationality) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Club* CareerManager::getInternationalOpponent() const {
+    if (!hasInternationalMatchToday()) return nullptr;
+    Player* p = m_gameManager->getPlayer();
+    
+    Database& db = m_gameManager->getDatabase();
+    Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+    
+    for (const auto& m : t.rounds[t.currentRoundIndex].matches) {
+        if (!m.leg1Played) {
+            if (m.home->name == p->nationality) return m.away;
+            if (m.away->name == p->nationality) return m.home;
+        }
+    }
+    return nullptr;
+}
+
+bool CareerManager::isHomeInternationalMatch() const {
+    if (!hasInternationalMatchToday()) return true;
+    Player* p = m_gameManager->getPlayer();
+    
+    Database& db = m_gameManager->getDatabase();
+    Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+    
+    for (const auto& m : t.rounds[t.currentRoundIndex].matches) {
+        if (!m.leg1Played) {
+            if (m.home->name == p->nationality) return true;
+            if (m.away->name == p->nationality) return false;
+        }
+    }
+    return true;
+}
+
 void CareerManager::simulateEuropeanMatches() {
     auto simMatches = [this](Tournament& t) {
         if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
@@ -147,8 +213,14 @@ void CareerManager::simulateEuropeanMatches() {
                 m.leg1Played = true;
                 
                 if (m.isFinal) {
-                    m.winner = (m.homeGoalsLeg1 > m.awayGoalsLeg1) ? m.home : m.away;
-                    if (m.homeGoalsLeg1 == m.awayGoalsLeg1) m.winner = (rand()%2==0) ? m.home : m.away;
+                    if (m.homeGoalsLeg1 > m.awayGoalsLeg1) m.winner = m.home;
+                    else if (m.awayGoalsLeg1 > m.homeGoalsLeg1) m.winner = m.away;
+                    else {
+                        m.homePenalties = 4 + rand() % 2;
+                        m.awayPenalties = 3 + rand() % 3;
+                        if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                        m.winner = (m.homePenalties > m.awayPenalties) ? m.home : m.away;
+                    }
                 }
             } else if (!m.leg2Played && !m.isFinal) {
                 // Sim Leg 2
@@ -184,6 +256,23 @@ void CareerManager::simulateEuropeanMatches() {
 
 void CareerManager::advanceDay() {
     Player* p = m_gameManager->getPlayer();
+    
+    if (m_isSummerBreak) {
+        m_summerDay++;
+        
+        // Every 3 days play an international match round
+        if (m_summerDay % 3 == 0) {
+            simulateInternationalMatches();
+        }
+        
+        Database& db = m_gameManager->getDatabase();
+        Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+        
+        if (t.isFinished || m_summerDay > 30) {
+            endSummerBreak();
+        }
+        return;
+    }
     
     // Apply energy effects of the CURRENT day before advancing
     if (getDayType() == CalendarDayType::Training) {
@@ -246,7 +335,14 @@ void CareerManager::skipSeason() {
                                 m.awayGoalsLeg1 = isHomeLeg ? ag : hg;
                                 m.leg1Played = true;
                                 if (m.isFinal) {
-                                    m.winner = (hg > ag) ? hc : ((ag > hg) ? ac : (rand()%2==0 ? hc : ac));
+                                    if (hg > ag) m.winner = hc;
+                                    else if (ag > hg) m.winner = ac;
+                                    else {
+                                        m.homePenalties = 4 + rand() % 2;
+                                        m.awayPenalties = 3 + rand() % 3;
+                                        if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                                        m.winner = (m.homePenalties > m.awayPenalties) ? hc : ac;
+                                    }
                                 }
                             } else if (!m.leg2Played && !m.isFinal) {
                                 m.homeGoalsLeg2 = isHomeLeg ? hg : ag;
@@ -256,7 +352,12 @@ void CareerManager::skipSeason() {
                                 int aggAway = m.awayGoalsLeg1 + m.awayGoalsLeg2;
                                 if (aggHome > aggAway) m.winner = m.home;
                                 else if (aggAway > aggHome) m.winner = m.away;
-                                else m.winner = (rand()%2==0) ? m.home : m.away;
+                                else {
+                                    m.homePenalties = 4 + rand() % 2;
+                                    m.awayPenalties = 3 + rand() % 3;
+                                    if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                                    m.winner = (m.homePenalties > m.awayPenalties) ? m.home : m.away;
+                                }
                             }
                         }
                     }
@@ -295,6 +396,9 @@ void CareerManager::skipSeason() {
                 if (hg > ag) { p->currentClub->points += 3; p->currentClub->wins++; opp->losses++; }
                 else if (ag > hg) { opp->points += 3; opp->wins++; p->currentClub->losses++; }
                 else { p->currentClub->points += 1; p->currentClub->draws++; opp->points += 1; opp->draws++; }
+                
+                p->totalSeasonRating += (5.0f + (rand() % 50) / 10.0f);
+                p->matchesPlayedThisSeason++;
             }
         } else if (getDayType() == CalendarDayType::Training) {
             p->experience += 50;
@@ -305,81 +409,57 @@ void CareerManager::skipSeason() {
 
 void CareerManager::simulateMatchweek() {
     Player* p = m_gameManager->getPlayer();
+    if (!p || !p->currentClub) return;
     
-    // Simple simulation for all clubs in the same league as the player
-    // This is a naive random pairing just to populate the table.
-    // In a real game, this would follow a strict schedule.
-    
-    // Note: The player's own match result should be recorded by MatchScreen.
-    // So we don't simulate the player's club here, or if we do, we skip it.
-    // For now, we skip simulating the league entirely here because we don't 
-    // want to falsely simulate the player's match before they play it.
-    // Actually, we can simulate all OTHER teams here.
-    
-    if (!p->currentClub) return;
-    
-    const League* league = m_gameManager->getDatabase().getLeague("Premier League"); // Fallback
-    // Find the league the player is in
+    // Simulate matches for ALL leagues
     for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-        for (const auto& c : l.clubs) {
-            if (c.name == p->currentClub->name) {
-                league = &l;
+        int n = l.clubs.size();
+        if (n < 2) continue;
+        
+        int numRounds = n - 1;
+        int r = p->weeksPlayed % numRounds;
+        
+        // Find if the player is in this league
+        int pIndex = -1;
+        for (int i = 0; i < n; ++i) {
+            if (l.clubs[i].name == p->currentClub->name) {
+                pIndex = i;
                 break;
             }
         }
-    }
-    
-    if (!league) return;
-    
-    // We need mutable access to clubs to update their stats
-    // Since getLeagues() returns const, we'll fetch them from the database
-    // Wait, Database getClub gives mutable pointer. Let's just iterate over names.
-    
-    int n = league->clubs.size();
-    if (n < 2) return;
-    
-    int numRounds = n - 1;
-    int r = p->weeksPlayed % numRounds;
-    
-    int pIndex = -1;
-    for (int i = 0; i < n; ++i) {
-        if (league->clubs[i].name == p->currentClub->name) {
-            pIndex = i;
-            break;
-        }
-    }
-    
-    auto rotate = [n, r](int x) {
-        if (x == 0) return 0;
-        return 1 + (x - 1 + r) % (n - 1);
-    };
-    
-    for (int i = 0; i < n / 2; ++i) {
-        int t1 = (i == 0) ? 0 : rotate(i);
-        int t2 = rotate(n - 1 - i);
         
-        // Skip the match involving the player's club, it was already played
-        if (t1 == pIndex || t2 == pIndex) continue;
+        auto rotate = [n, r](int x) {
+            if (x == 0) return 0;
+            return 1 + (x - 1 + r) % (n - 1);
+        };
         
-        Club* c1 = m_gameManager->getDatabase().getClub(league->name, league->clubs[t1].name);
-        Club* c2 = m_gameManager->getDatabase().getClub(league->name, league->clubs[t2].name);
-        
-        if (c1 && c2) {
-            int chance1 = c1->strength + (rand() % 40 - 20);
-            int chance2 = c2->strength + (rand() % 40 - 20);
+        for (int i = 0; i < n / 2; ++i) {
+            int t1 = (i == 0) ? 0 : rotate(i);
+            int t2 = rotate(n - 1 - i);
             
-            if (chance1 > chance2 + 10) {
-                // c1 wins
-                c1->points += 3; c1->wins++; c1->goalsFor += 2; c1->goalsAgainst += 0;
-                c2->losses++; c2->goalsFor += 0; c2->goalsAgainst += 2;
-            } else if (chance2 > chance1 + 10) {
-                // c2 wins
-                c2->points += 3; c2->wins++; c2->goalsFor += 2; c2->goalsAgainst += 0;
-                c1->losses++; c1->goalsFor += 0; c1->goalsAgainst += 2;
-            } else {
-                // draw
-                c1->points += 1; c1->draws++; c1->goalsFor += 1; c1->goalsAgainst += 1;
-                c2->points += 1; c2->draws++; c2->goalsFor += 1; c2->goalsAgainst += 1;
+            // Skip the match involving the player's club, it was already played
+            if (t1 == pIndex || t2 == pIndex) continue;
+            
+            Club* c1 = m_gameManager->getDatabase().getClub(l.name, l.clubs[t1].name);
+            Club* c2 = m_gameManager->getDatabase().getClub(l.name, l.clubs[t2].name);
+            
+            if (c1 && c2) {
+                int chance1 = c1->strength + (rand() % 40 - 20);
+                int chance2 = c2->strength + (rand() % 40 - 20);
+                
+                if (chance1 > chance2 + 10) {
+                    // c1 wins
+                    c1->points += 3; c1->wins++; c1->goalsFor += 2; c1->goalsAgainst += 0;
+                    c2->losses++; c2->goalsFor += 0; c2->goalsAgainst += 2;
+                } else if (chance2 > chance1 + 10) {
+                    // c2 wins
+                    c2->points += 3; c2->wins++; c2->goalsFor += 2; c2->goalsAgainst += 0;
+                    c1->losses++; c1->goalsFor += 0; c1->goalsAgainst += 2;
+                } else {
+                    // draw
+                    c1->points += 1; c1->draws++; c1->goalsFor += 1; c1->goalsAgainst += 1;
+                    c2->points += 1; c2->draws++; c2->goalsFor += 1; c2->goalsAgainst += 1;
+                }
             }
         }
     }
@@ -452,4 +532,87 @@ void CareerManager::endSeason() {
     db.initTournaments(clClubs, elClubs);
     
     m_gameManager->getDatabase().resetStats();
+    
+    startSummerBreak();
 }
+
+void CareerManager::startSummerBreak() {
+    m_isSummerBreak = true;
+    m_summerDay = 1;
+    m_year++;
+    
+    Player* p = m_gameManager->getPlayer();
+    Database& db = m_gameManager->getDatabase();
+    
+    // Call-up logic
+    float avgRating = 0.0f;
+    if (p->matchesPlayedThisSeason > 0) {
+        avgRating = p->totalSeasonRating / (float)p->matchesPlayedThisSeason;
+    }
+    
+    if (avgRating > 7.0f && p->matchesPlayedThisSeason >= 10) {
+        p->isCalledUp = true;
+    } else {
+        p->isCalledUp = false;
+    }
+    
+    // Reset player season stats
+    p->totalSeasonRating = 0.0f;
+    p->matchesPlayedThisSeason = 0;
+    
+    // Generate Tournament
+    if (m_year % 2 == 0) {
+        db.generateEuroCup();
+    } else {
+        db.generateWorldCup();
+    }
+}
+
+void CareerManager::endSummerBreak() {
+    m_isSummerBreak = false;
+    m_day = 1; // Start of regular season
+}
+
+void CareerManager::simulateInternationalMatches() {
+    Database& db = m_gameManager->getDatabase();
+    Tournament& t = (m_year % 2 == 0) ? db.getEuroCup() : db.getWorldCup();
+    
+    if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
+    Player* p = m_gameManager->getPlayer();
+    CupRound& round = t.rounds[t.currentRoundIndex];
+    
+    for (auto& m : round.matches) {
+        // Skip player's match if they are called up and it's their team
+        if (p && p->isCalledUp && (m.home->name == p->nationality || m.away->name == p->nationality)) {
+            continue; 
+        }
+        
+        if (!m.leg1Played) {
+            int homeStr = m.home ? m.home->strength : 50;
+            int awayStr = m.away ? m.away->strength : 50;
+            m.homeGoalsLeg1 = rand() % 5;
+            m.awayGoalsLeg1 = rand() % 4;
+            if (homeStr > awayStr + 5) m.homeGoalsLeg1++;
+            if (awayStr > homeStr + 5) m.awayGoalsLeg1++;
+            m.leg1Played = true;
+            
+            if (m.homeGoalsLeg1 > m.awayGoalsLeg1) m.winner = m.home;
+            else if (m.awayGoalsLeg1 > m.homeGoalsLeg1) m.winner = m.away;
+            else {
+                m.homePenalties = 4 + rand() % 2;
+                m.awayPenalties = 3 + rand() % 3;
+                if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                m.winner = (m.homePenalties > m.awayPenalties) ? m.home : m.away;
+            }
+        }
+    }
+    
+    db.advanceTournamentRound(t);
+}
+
+void CareerManager::skipSummer() {
+    while (isSummerBreak()) {
+        advanceDay();
+    }
+}
+

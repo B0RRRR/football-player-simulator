@@ -5,8 +5,8 @@ struct Settings {
     int soundVolume = 50;
     int difficulty = 1; // 0: Easy, 1: Normal, 2: Hard
     bool isFullscreen = false;
-    unsigned int resWidth = 800;
-    unsigned int resHeight = 600;
+    unsigned int resWidth = 1280;
+    unsigned int resHeight = 720;
 };
 
 // Global settings instance

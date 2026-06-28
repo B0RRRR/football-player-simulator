@@ -40,6 +40,13 @@ void MatchStatsScreen::init() {
     std::stringstream rss;
     rss << std::fixed << std::setprecision(1) << m_engine->getPlayerRating();
     
+    // Accumulate rating
+    Player* p = m_gameManager->getPlayer();
+    if (p) {
+        p->totalSeasonRating += m_engine->getPlayerRating();
+        p->matchesPlayedThisSeason++;
+    }
+    
     m_ratingText.setFont(font);
     m_ratingText.setCharacterSize(30);
     m_ratingText.setFillColor(sf::Color::Cyan);
@@ -64,7 +71,33 @@ void MatchStatsScreen::init() {
     Club* hc = m_engine->isHome() ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
     Club* ac = m_engine->isHome() ? m_engine->getOpponentClub() : m_engine->getPlayerClub();
     
-    if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
+    if (m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
+        auto updateTournament = [&](Tournament& t) {
+            if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
+            for (auto& m : t.rounds[t.currentRoundIndex].matches) {
+                if ((m.home == hc && m.away == ac) || (m.home == ac && m.away == hc)) {
+                    bool isHomeLeg = (m.home == hc);
+                    if (!m.leg1Played) {
+                        m.homeGoalsLeg1 = isHomeLeg ? home.goals : away.goals;
+                        m.awayGoalsLeg1 = isHomeLeg ? away.goals : home.goals;
+                        m.leg1Played = true;
+                        
+                        m.winner = (home.goals > away.goals) ? hc : ((away.goals > home.goals) ? ac : nullptr);
+                        if (!m.winner) {
+                            // random pens if user drew
+                            m.homePenalties = 4 + rand()%2;
+                            m.awayPenalties = 3 + rand()%3;
+                            if (m.homePenalties == m.awayPenalties) m.homePenalties++;
+                            m.winner = (m.homePenalties > m.awayPenalties) ? m.home : m.away;
+                            m_statsText.setString(m_statsText.getString() + "\n\nTied! " + m.winner->name + " won on penalties.");
+                        }
+                    }
+                }
+            }
+        };
+        updateTournament(m_gameManager->getDatabase().getWorldCup());
+        updateTournament(m_gameManager->getDatabase().getEuroCup());
+    } else if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
         auto updateTournament = [&](Tournament& t) {
             if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
             for (auto& m : t.rounds[t.currentRoundIndex].matches) {

@@ -22,6 +22,8 @@ private:
         sf::RectangleShape rect;
         sf::Text text;
         std::string action;
+        sf::Color baseColor = sf::Color(100, 100, 100);
+        bool isHovered = false;
     };
     
     std::vector<Button> m_buttons;

@@ -5,7 +5,7 @@
 #include "Player.h"
 #include <sstream>
 
-EuropeanCupScreen::EuropeanCupScreen() : m_showingChampionsLeague(true) {
+EuropeanCupScreen::EuropeanCupScreen() : m_currentView(0) {
 }
 
 void EuropeanCupScreen::init() {
@@ -15,7 +15,7 @@ void EuropeanCupScreen::init() {
     m_titleText.setCharacterSize(36);
     m_titleText.setFillColor(sf::Color::Yellow);
     m_titleText.setPosition(50.f, 20.f);
-    m_titleText.setString("European Cups");
+    m_titleText.setString("Tournaments");
     
     m_statusText.setFont(font);
     m_statusText.setCharacterSize(20);
@@ -43,6 +43,7 @@ void EuropeanCupScreen::init() {
     
     createBtn("Champions League", 50.f, 140.f, "CL");
     createBtn("Europa League", 260.f, 140.f, "EL");
+    createBtn("Int. Tournament", 470.f, 140.f, "INT");
     createBtn("Back", 600.f, 520.f, "BACK");
     
     updateBracketVisuals();
@@ -52,10 +53,12 @@ void EuropeanCupScreen::updateBracketVisuals() {
     m_bracketTexts.clear();
     auto& font = AssetManager::get().getFont("MainFont");
     
-    Tournament& t = m_showingChampionsLeague ? m_gameManager->getDatabase().getChampionsLeague() : m_gameManager->getDatabase().getEuropaLeague();
+    Tournament& t = m_currentView == 0 ? m_gameManager->getDatabase().getChampionsLeague() : 
+                    (m_currentView == 1 ? m_gameManager->getDatabase().getEuropaLeague() :
+                    (m_gameManager->getCareerManager()->getYear() % 2 == 0 ? m_gameManager->getDatabase().getEuroCup() : m_gameManager->getDatabase().getWorldCup()));
     
     Player* p = m_gameManager->getPlayer();
-    std::string playerStatus = "Your club is not participating in this tournament.";
+    std::string playerStatus = "You are not participating in this tournament.";
     bool found = false;
     
     float startY = 200.f;
@@ -71,10 +74,16 @@ void EuropeanCupScreen::updateBracketVisuals() {
         
         float y = startY + 30.f;
         for (const auto& m : t.rounds[i].matches) {
-            if (m.home && p && p->currentClub && m.home->name == p->currentClub->name) found = true;
-            if (m.away && p && p->currentClub && m.away->name == p->currentClub->name) found = true;
+            if (m_currentView < 2) {
+                if (m.home && p && p->currentClub && m.home->name == p->currentClub->name) found = true;
+                if (m.away && p && p->currentClub && m.away->name == p->currentClub->name) found = true;
+            } else {
+                if (m.home && p && m.home->name == p->nationality && p->isCalledUp) found = true;
+                if (m.away && p && m.away->name == p->nationality && p->isCalledUp) found = true;
+            }
             
             std::stringstream ss;
+            if (m.winner == m.home) ss << "[*] ";
             ss << (m.home ? m.home->name : "TBD") << " ";
             
             if (m.isFinal) {
@@ -102,7 +111,7 @@ void EuropeanCupScreen::updateBracketVisuals() {
             }
             
             ss << " " << (m.away ? m.away->name : "TBD");
-            if (m.winner) ss << " [*]";
+            if (m.winner == m.away) ss << " [*]";
             
             sf::Text matchText;
             matchText.setFont(font);
@@ -116,15 +125,19 @@ void EuropeanCupScreen::updateBracketVisuals() {
         }
         
         startY = y + 15.f;
-        // Explicitly wrap after Round of 16 to keep it clean
-        if (i == 0 && t.rounds.size() > 1) {
+        // Explicitly wrap after Round of 32 and Round of 16 to keep it clean (3 columns)
+        if ((i == 0 || i == 1) && t.rounds.size() > 1) {
             startY = 200.f;
             startX += 380.f; 
         }
     }
     
     if (found) {
-        playerStatus = "Your club is participating in this tournament!";
+        playerStatus = "You are participating in this tournament!";
+    }
+    
+    if (t.rounds.empty()) {
+        playerStatus = "Tournament has not been generated yet.";
     }
     
     if (t.isFinished && t.winner) {
@@ -140,10 +153,13 @@ void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "CL") {
-                    m_showingChampionsLeague = true;
+                    m_currentView = 0;
                     updateBracketVisuals();
                 } else if (btn.action == "EL") {
-                    m_showingChampionsLeague = false;
+                    m_currentView = 1;
+                    updateBracketVisuals();
+                } else if (btn.action == "INT") {
+                    m_currentView = 2;
                     updateBracketVisuals();
                 } else if (btn.action == "BACK") {
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
@@ -163,8 +179,9 @@ void EuropeanCupScreen::draw(sf::RenderWindow& window) {
     
     for (const auto& btn : m_buttons) {
         sf::RectangleShape r = btn.rect;
-        if (btn.action == "CL" && m_showingChampionsLeague) r.setFillColor(sf::Color(100, 150, 100));
-        if (btn.action == "EL" && !m_showingChampionsLeague) r.setFillColor(sf::Color(100, 150, 100));
+        if (btn.action == "CL" && m_currentView == 0) r.setFillColor(sf::Color(100, 150, 100));
+        if (btn.action == "EL" && m_currentView == 1) r.setFillColor(sf::Color(100, 150, 100));
+        if (btn.action == "INT" && m_currentView == 2) r.setFillColor(sf::Color(100, 150, 100));
         window.draw(r);
         window.draw(btn.text);
     }

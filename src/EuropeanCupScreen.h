@@ -26,7 +26,7 @@ private:
     };
     std::vector<Button> m_buttons;
     
-    bool m_showingChampionsLeague;
+    int m_currentView; // 0 = CL, 1 = EL, 2 = Int
     
     std::vector<sf::Text> m_bracketTexts;
 };

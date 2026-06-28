@@ -61,6 +61,7 @@ public:
     
     const std::vector<League>& getLeagues() const { return m_leagues; }
     const League* getLeague(const std::string& name) const;
+    const League* getNationalTeams() const { return &m_nationalTeams; }
     Club* getClub(const std::string& leagueName, const std::string& clubName);
     
     void processRelegation();
@@ -70,9 +71,19 @@ public:
     
     Tournament& getChampionsLeague() { return m_championsLeague; }
     Tournament& getEuropaLeague() { return m_europaLeague; }
+    
+    Tournament& getWorldCup() { return m_worldCup; }
+    Tournament& getEuroCup() { return m_euroCup; }
+    
+    void initNationalTeams();
+    void generateWorldCup();
+    void generateEuroCup();
 
 private:
     std::vector<League> m_leagues;
+    League m_nationalTeams; // Holds all national teams
     Tournament m_championsLeague;
     Tournament m_europaLeague;
+    Tournament m_worldCup;
+    Tournament m_euroCup;
 };

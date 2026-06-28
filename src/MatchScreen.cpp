@@ -12,48 +12,70 @@ void MatchScreen::init() {
     
     // Find an opponent from the same league
     Club* opp = nullptr;
-    const League* lg = nullptr;
-    for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-        for (const auto& c : l.clubs) {
-            if (c.name == p->currentClub->name) {
-                lg = &l;
-                break;
-            }
-        }
-    }
+    bool isHomeMatch = true;
+    Club* playerClub = p->currentClub;
     
-    if (lg) {
-        int n = lg->clubs.size();
-        int r = p->weeksPlayed % (n - 1);
-        
-        int pIndex = -1;
-        for (int i = 0; i < n; ++i) {
-            if (lg->clubs[i].name == p->currentClub->name) {
-                pIndex = i;
-                break;
+    if (m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
+        opp = m_gameManager->getCareerManager()->getInternationalOpponent();
+        isHomeMatch = m_gameManager->getCareerManager()->isHomeInternationalMatch();
+        // Use national team as player's club
+        const League* nats = m_gameManager->getDatabase().getNationalTeams();
+        if (nats) {
+            for (const auto& c : nats->clubs) {
+                if (c.name == p->nationality) {
+                    playerClub = const_cast<Club*>(&c);
+                    break;
+                }
+            }
+        }
+    } else if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
+        opp = m_gameManager->getCareerManager()->getTodayOpponent();
+        isHomeMatch = m_gameManager->getCareerManager()->isHomeMatchToday();
+    } else {
+        const League* lg = nullptr;
+        for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+            for (const auto& c : l.clubs) {
+                if (c.name == p->currentClub->name) {
+                    lg = &l;
+                    break;
+                }
             }
         }
         
-        auto rotate = [n, r](int x) {
-            if (x == 0) return 0;
-            return 1 + (x - 1 + r) % (n - 1);
-        };
-        
-        for (int i = 0; i < n / 2; ++i) {
-            int t1 = (i == 0) ? 0 : rotate(i);
-            int t2 = rotate(n - 1 - i);
+        if (lg) {
+            int n = lg->clubs.size();
+            int r = p->weeksPlayed % (n - 1);
             
-            if (t1 == pIndex) {
-                opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
-                break;
-            } else if (t2 == pIndex) {
-                opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
-                break;
+            int pIndex = -1;
+            for (int i = 0; i < n; ++i) {
+                if (lg->clubs[i].name == p->currentClub->name) {
+                    pIndex = i;
+                    break;
+                }
+            }
+            
+            auto rotate = [n, r](int x) {
+                if (x == 0) return 0;
+                return 1 + (x - 1 + r) % (n - 1);
+            };
+            
+            for (int i = 0; i < n / 2; ++i) {
+                int t1 = (i == 0) ? 0 : rotate(i);
+                int t2 = rotate(n - 1 - i);
+                
+                if (t1 == pIndex) {
+                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
+                    break;
+                } else if (t2 == pIndex) {
+                    opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
+                    isHomeMatch = false;
+                    break;
+                }
             }
         }
     }
     
-    m_engine = std::make_shared<MatchEngine>(p->currentClub, opp, true, p); // Assuming home
+    m_engine = std::make_shared<MatchEngine>(playerClub, opp, isHomeMatch, p);
 
     auto& font = AssetManager::get().getFont("MainFont");
     
@@ -187,10 +209,15 @@ void MatchScreen::update(sf::Time deltaTime) {
     }
     
     // Update texts
-    std::string scoreStr = "[" + std::to_string(m_engine->getPlayerClub()->strength) + "] " + 
-                           m_engine->getPlayerClub()->name + " " + std::to_string(m_engine->getHomeScore()) + 
-                           " - " + std::to_string(m_engine->getAwayScore()) + " " + m_engine->getOpponentClub()->name + 
-                           " [" + std::to_string(m_engine->getOpponentClub()->strength) + "]";
+    std::string homeName = m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
+    std::string awayName = m_engine->isHome() ? m_engine->getOpponentClub()->name : m_engine->getPlayerClub()->name;
+    int homeStr = m_engine->isHome() ? m_engine->getPlayerClub()->strength : m_engine->getOpponentClub()->strength;
+    int awayStr = m_engine->isHome() ? m_engine->getOpponentClub()->strength : m_engine->getPlayerClub()->strength;
+
+    std::string scoreStr = "[" + std::to_string(homeStr) + "] " + 
+                           homeName + " " + std::to_string(m_engine->getHomeScore()) + 
+                           " - " + std::to_string(m_engine->getAwayScore()) + " " + awayName + 
+                           " [" + std::to_string(awayStr) + "]";
     m_scoreText.setString(sf::String::fromUtf8(scoreStr.begin(), scoreStr.end()));
     
     m_timeText.setString(std::to_string(m_engine->getMinute()) + "'");

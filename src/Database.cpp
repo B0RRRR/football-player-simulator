@@ -120,6 +120,8 @@ void Database::init() {
         {"Boulogne", 63}, {"Dunkerque", 65}
     };
     m_leagues.push_back(ligue2);
+    
+    initNationalTeams();
 }
 
 Club* Database::getClub(const std::string& leagueName, const std::string& clubName) {
@@ -280,4 +282,110 @@ void Database::advanceTournamentRound(Tournament& t) {
             }
         }
     }
+}
+
+void Database::initNationalTeams() {
+    m_nationalTeams.name = "National Teams";
+    m_nationalTeams.clubs = {
+        {"Argentina", 96}, {"Spain", 95}, {"France", 95}, {"England", 94},
+        {"Portugal", 92}, {"Brazil", 93}, {"Morocco", 85}, {"Netherlands", 89},
+        {"Belgium", 88}, {"Germany", 91}, {"Croatia", 86}, {"Italy", 89},
+        {"Colombia", 85}, {"Mexico", 83}, {"Senegal", 82}, {"Uruguay", 86},
+        {"USA", 81}, {"Japan", 82}, {"Switzerland", 84}, {"Iran", 78},
+        {"Denmark", 84}, {"Turkey", 82}, {"Ecuador", 80}, {"Austria", 83},
+        {"South Korea", 81}, {"Nigeria", 80}, {"Australia", 79}, {"Algeria", 79},
+        {"Egypt", 78}, {"Canada", 78}, {"Norway", 82}, {"Russia", 79},
+        {"Sweden", 81} // Added Sweden for Euro
+    };
+}
+
+void Database::generateWorldCup() {
+    m_worldCup.name = "World Cup";
+    m_worldCup.rounds.clear();
+    m_worldCup.currentRoundIndex = 0;
+    m_worldCup.isFinished = false;
+    m_worldCup.winner = nullptr;
+    
+    // Get all 32 teams except Sweden (index 32 is Sweden)
+    std::vector<Club*> teams;
+    for (int i = 0; i < 32 && i < m_nationalTeams.clubs.size(); ++i) {
+        teams.push_back(&m_nationalTeams.clubs[i]);
+    }
+    
+    std::random_shuffle(teams.begin(), teams.end());
+    
+    CupRound r32;
+    r32.name = "Round of 32";
+    for (size_t i = 0; i < 16; ++i) {
+        CupMatch m;
+        m.home = teams[i * 2];
+        m.away = teams[i * 2 + 1];
+        m.isFinal = true; // Treats as 1-leg match with penalties!
+        r32.matches.push_back(m);
+    }
+    m_worldCup.rounds.push_back(r32);
+    
+    CupRound r16; r16.name = "Round of 16";
+    for (int i=0; i<8; ++i) { CupMatch m; m.isFinal = true; r16.matches.push_back(m); }
+    m_worldCup.rounds.push_back(r16);
+    
+    CupRound qf; qf.name = "Quarter-Finals";
+    for (int i=0; i<4; ++i) { CupMatch m; m.isFinal = true; qf.matches.push_back(m); }
+    m_worldCup.rounds.push_back(qf);
+    
+    CupRound sf; sf.name = "Semi-Finals";
+    for (int i=0; i<2; ++i) { CupMatch m; m.isFinal = true; sf.matches.push_back(m); }
+    m_worldCup.rounds.push_back(sf);
+    
+    CupRound f; f.name = "Final";
+    CupMatch fm; fm.isFinal = true; f.matches.push_back(fm);
+    m_worldCup.rounds.push_back(f);
+}
+
+void Database::generateEuroCup() {
+    m_euroCup.name = "Euro Cup";
+    m_euroCup.rounds.clear();
+    m_euroCup.currentRoundIndex = 0;
+    m_euroCup.isFinished = false;
+    m_euroCup.winner = nullptr;
+    
+    std::vector<std::string> euroNames = {
+        "France", "Spain", "England", "Netherlands", "Portugal", "Belgium",
+        "Germany", "Croatia", "Italy", "Switzerland", "Denmark", "Austria",
+        "Norway", "Turkey", "Russia", "Sweden"
+    };
+    
+    std::vector<Club*> teams;
+    for (const auto& name : euroNames) {
+        for (auto& c : m_nationalTeams.clubs) {
+            if (c.name == name) {
+                teams.push_back(&c);
+                break;
+            }
+        }
+    }
+    
+    std::random_shuffle(teams.begin(), teams.end());
+    
+    CupRound r16; r16.name = "Round of 16";
+    for (size_t i = 0; i < 8; ++i) {
+        CupMatch m;
+        m.home = teams[i * 2];
+        m.away = teams[i * 2 + 1];
+        m.isFinal = true; // 1-leg match
+        r16.matches.push_back(m);
+    }
+    m_euroCup.rounds.push_back(r16);
+    
+    CupRound qf; qf.name = "Quarter-Finals";
+    for (int i=0; i<4; ++i) { CupMatch m; m.isFinal = true; qf.matches.push_back(m); }
+    m_euroCup.rounds.push_back(qf);
+    
+    CupRound sf; sf.name = "Semi-Finals";
+    for (int i=0; i<2; ++i) { CupMatch m; m.isFinal = true; sf.matches.push_back(m); }
+    m_euroCup.rounds.push_back(sf);
+    
+    CupRound f; f.name = "Final";
+    CupMatch fm; fm.isFinal = true; f.matches.push_back(fm);
+    m_euroCup.rounds.push_back(f);
 }

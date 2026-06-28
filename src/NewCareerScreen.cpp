@@ -44,8 +44,21 @@ void NewCareerScreen::rebuildButtons() {
         m_titleText.setString("Step 1: Enter Your Name");
         m_infoText.setString("Type your name and press Enter to continue...");
         // Button is created only for generic next, but we use keyboard Enter.
+    } else if (m_state == SetupState::SelectNationality) {
+        m_titleText.setString("Step 2: Choose Nationality");
+        m_infoText.setString("Select your country (European Only for now):");
+        
+        std::vector<std::string> euroNames = {
+            "France", "Spain", "England", "Netherlands", "Portugal", "Belgium",
+            "Germany", "Croatia", "Italy", "Switzerland", "Denmark", "Austria",
+            "Norway", "Turkey", "Russia", "Sweden"
+        };
+        for (const auto& name : euroNames) {
+            labels.push_back(name);
+            actions.push_back("NAT_" + name);
+        }
     } else if (m_state == SetupState::SelectPosition) {
-        m_titleText.setString("Step 2: Choose Position");
+        m_titleText.setString("Step 3: Choose Position");
         m_infoText.setString("Select your role on the pitch:");
         labels = {"Goalkeeper", "Defender", "Midfielder", "Forward"};
         actions = {"POS_0", "POS_1", "POS_2", "POS_3"};
@@ -59,7 +72,7 @@ void NewCareerScreen::rebuildButtons() {
             actions.push_back("LEAGUE_" + l.name);
         }
     } else if (m_state == SetupState::SelectClub) {
-        m_titleText.setString("Step 4: Choose Club");
+        m_titleText.setString("Step 4: Choose League");
         m_infoText.setString("Pick a team to sign your first contract:");
         
         auto leagues = m_gameManager->getDatabase().getLeagues();
@@ -87,8 +100,20 @@ void NewCareerScreen::rebuildButtons() {
     
     for (size_t i = 0; i < labels.size(); ++i) {
         Button btn;
-        btn.rect.setSize(sf::Vector2f(400.f, 40.f));
-        btn.rect.setPosition(100.f, startY + i * 50.f);
+        btn.rect.setSize(sf::Vector2f(400.f, 30.f));
+        
+        // Wrap to two columns if more than 10 buttons (like nationalities)
+        if (labels.size() > 10) {
+            btn.rect.setSize(sf::Vector2f(300.f, 30.f));
+            if (i < labels.size() / 2) {
+                btn.rect.setPosition(100.f, startY + i * 35.f);
+            } else {
+                btn.rect.setPosition(420.f, startY + (i - labels.size() / 2) * 35.f);
+            }
+        } else {
+            btn.rect.setPosition(100.f, startY + i * 50.f);
+        }
+        
         btn.rect.setFillColor(sf::Color(100, 100, 100));
         
         btn.text.setFont(font);
@@ -133,7 +158,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
         }
         if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
             if (!m_playerName.empty()) {
-                m_state = SetupState::SelectPosition;
+                m_state = SetupState::SelectNationality;
                 rebuildButtons();
             }
         }
@@ -149,7 +174,11 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     return;
                 }
                 
-                if (m_state == SetupState::SelectPosition && btn.action.find("POS_") == 0) {
+                if (m_state == SetupState::SelectNationality && btn.action.find("NAT_") == 0) {
+                    m_selectedNationality = btn.action.substr(4);
+                    m_state = SetupState::SelectPosition;
+                    rebuildButtons();
+                } else if (m_state == SetupState::SelectPosition && btn.action.find("POS_") == 0) {
                     m_selectedPosition = std::stoi(btn.action.substr(4));
                     m_state = SetupState::SelectClub;
                     rebuildButtons();
@@ -159,6 +188,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     // Finalize creation
                     Player* p = m_gameManager->getPlayer();
                     p->name = m_playerName;
+                    p->nationality = m_selectedNationality;
                     p->position = static_cast<PlayerPosition>(m_selectedPosition);
                     // Find the club object
                     const Club* selectedClubObj = nullptr;
