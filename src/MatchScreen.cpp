@@ -127,7 +127,7 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
         Player* p = m_gameManager->getPlayer();
         
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
             
             if (p->position == PlayerPosition::Forward || p->position == PlayerPosition::Goalkeeper) {
                 // Shoot or Save towards mouse

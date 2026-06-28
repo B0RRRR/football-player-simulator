@@ -115,7 +115,7 @@ void CareerHubScreen::init() {
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -199,7 +199,7 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                             }
                             
                             if (lg) {
-                                int n = lg->clubs.size();
+                                int n = static_cast<int>(lg->clubs.size());
                                 int r = p->weeksPlayed % (n - 1);
                                 
                                 int pIndex = -1;
@@ -256,7 +256,7 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(event.mouseMove.x, event.mouseMove.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
         for (auto& btn : m_buttons) {
             btn.isHovered = btn.rect.getGlobalBounds().contains(mousePos);
         }

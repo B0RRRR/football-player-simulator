@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-class Club;
+struct Club;
 
 class TransferScreen : public Screen {
 public:

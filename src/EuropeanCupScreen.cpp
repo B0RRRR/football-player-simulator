@@ -149,7 +149,7 @@ void EuropeanCupScreen::updateBracketVisuals() {
 
 void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "CL") {

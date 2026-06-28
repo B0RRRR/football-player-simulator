@@ -1,5 +1,6 @@
 #include "Database.h"
 #include <algorithm>
+#include <random>
 
 Database::Database() {
 }
@@ -312,7 +313,9 @@ void Database::generateWorldCup() {
         teams.push_back(&m_nationalTeams.clubs[i]);
     }
     
-    std::random_shuffle(teams.begin(), teams.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(teams.begin(), teams.end(), g);
     
     CupRound r32;
     r32.name = "Round of 32";
@@ -365,7 +368,9 @@ void Database::generateEuroCup() {
         }
     }
     
-    std::random_shuffle(teams.begin(), teams.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(teams.begin(), teams.end(), g);
     
     CupRound r16; r16.name = "Round of 16";
     for (size_t i = 0; i < 8; ++i) {

@@ -121,7 +121,7 @@ void TrainingScreen::initGame() {
 void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (m_state == TrainingState::Intro) {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
             if (m_btnRect.getGlobalBounds().contains(mousePos)) {
                 initGame();
             }
@@ -159,7 +159,7 @@ void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
             }
         }
         else if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
             
             if (p->position == PlayerPosition::Midfielder) {
                 for (auto it = m_teammates.begin(); it != m_teammates.end(); ) {
@@ -187,7 +187,7 @@ void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
     }
     else if (m_state == TrainingState::Result) {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
             if (m_btnRect.getGlobalBounds().contains(mousePos)) {
                 // Advance day and exit
                 m_gameManager->getCareerManager()->advanceDay();

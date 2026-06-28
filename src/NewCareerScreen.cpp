@@ -165,7 +165,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -218,7 +218,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(event.mouseMove.x, event.mouseMove.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 btn.rect.setFillColor(sf::Color(150, 150, 150));

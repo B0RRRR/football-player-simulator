@@ -75,7 +75,7 @@ Club* CareerManager::getTodayOpponent() const {
         }
         
         if (lg) {
-            int n = lg->clubs.size();
+            int n = static_cast<int>(lg->clubs.size());
             int r = p->weeksPlayed % (n - 1);
             int pIndex = -1;
             for (int i = 0; i < n; ++i) {
@@ -374,7 +374,7 @@ void CareerManager::skipSeason() {
                 }
             }
             if (lg) {
-                int n = lg->clubs.size();
+                int n = static_cast<int>(lg->clubs.size());
                 int r = p->weeksPlayed % (n - 1);
                 int pIndex = -1;
                 for (int i = 0; i < n; ++i) {
@@ -413,7 +413,7 @@ void CareerManager::simulateMatchweek() {
     
     // Simulate matches for ALL leagues
     for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-        int n = l.clubs.size();
+        int n = static_cast<int>(l.clubs.size());
         if (n < 2) continue;
         
         int numRounds = n - 1;

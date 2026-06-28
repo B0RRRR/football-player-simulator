@@ -37,7 +37,7 @@ void LeagueTableScreen::init() {
 
 void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
         
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
             m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
@@ -45,7 +45,7 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(event.mouseMove.x, event.mouseMove.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
             m_backButton.rect.setFillColor(sf::Color(200, 50, 50));
         } else {

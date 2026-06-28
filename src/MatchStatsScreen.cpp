@@ -160,7 +160,7 @@ void MatchStatsScreen::init() {
 
 void MatchStatsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed) {
-        sf::Vector2f mousePos(event.mouseButton.x, event.mouseButton.y);
+        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
         if (m_btnContinue.getGlobalBounds().contains(mousePos)) {
             m_gameManager->getCareerManager()->advanceDay();
             m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
