@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "MatchStatsScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -55,7 +56,7 @@ void MatchStatsScreen::init() {
     
     m_btnContinue.setSize(sf::Vector2f(200.f, 50.f));
     m_btnContinue.setPosition(300.f, 450.f);
-    m_btnContinue.setFillColor(sf::Color(100, 100, 100));
+    m_btnContinue.setFillColor(UITheme::ButtonNormal);
     
     m_btnText.setFont(font);
     m_btnText.setString("Continue");
@@ -160,7 +161,7 @@ void MatchStatsScreen::init() {
 
 void MatchStatsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         if (m_btnContinue.getGlobalBounds().contains(mousePos)) {
             m_gameManager->getCareerManager()->advanceDay();
             m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
@@ -172,7 +173,7 @@ void MatchStatsScreen::update(sf::Time deltaTime) {
 }
 
 void MatchStatsScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 30));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_statsText);
     window.draw(m_ratingText);

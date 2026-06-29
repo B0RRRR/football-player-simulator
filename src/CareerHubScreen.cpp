@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "CareerHubScreen.h"
 #include "MatchScreen.h"
 #include "MenuScreen.h"
@@ -41,7 +42,7 @@ void CareerHubScreen::init() {
         Button btn;
         btn.rect.setSize(sf::Vector2f(300.f, 50.f));
         btn.rect.setPosition(50.f, startY + i * 60.f);
-        btn.baseColor = sf::Color(100, 100, 100);
+        btn.baseColor = UITheme::ButtonNormal;
         
         btn.text.setFont(font);
         btn.text.setString(buttonLabels[i]);
@@ -115,7 +116,7 @@ void CareerHubScreen::init() {
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -256,7 +257,7 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             btn.isHovered = btn.rect.getGlobalBounds().contains(mousePos);
         }
@@ -299,7 +300,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
             } else {
                 m_buttons[0].text.setString("Simulate Day");
                 m_buttons[0].action = "Advance Day";
-                m_buttons[0].baseColor = sf::Color(100, 100, 100);
+                m_buttons[0].baseColor = UITheme::ButtonNormal;
             }
         } else if (p->injuredDays > 0) {
             m_buttons[0].text.setString("Recovery (Rest)");
@@ -308,7 +309,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         } else {
             m_buttons[0].text.setString("Advance Day");
             m_buttons[0].action = "Advance Day";
-            m_buttons[0].baseColor = sf::Color(100, 100, 100);
+            m_buttons[0].baseColor = UITheme::ButtonNormal;
         }
 
         // Handle Transfer Window
@@ -363,7 +364,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
 }
 
 void CareerHubScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 30, 20));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_playerStatsText);
     window.draw(m_calendarText);

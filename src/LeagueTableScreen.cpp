@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "LeagueTableScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -37,7 +38,7 @@ void LeagueTableScreen::init() {
 
 void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
             m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
@@ -45,7 +46,7 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
             m_backButton.rect.setFillColor(sf::Color(200, 50, 50));
         } else {
@@ -56,6 +57,7 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
 
 void LeagueTableScreen::update(sf::Time deltaTime) {
     m_tableRows.clear();
+    m_tableLogos.clear();
     auto& font = AssetManager::get().getFont("MainFont");
     
     Player* p = m_gameManager->getPlayer();
@@ -116,7 +118,18 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
         float y = startY + i * rowHeight;
         
         addColumn(std::to_string(i+1), 50.f, y, cColor);
-        addColumn(c.name, 100.f, y, cColor);
+        
+        // Draw Logo
+        sf::Sprite logo;
+        bool isNat = (currentLeague->name == "National Teams");
+        logo.setTexture(AssetManager::get().getTexture(c.name, isNat));
+        logo.setPosition(80.f, y);
+        float scaleX = 20.f / logo.getTexture()->getSize().x;
+        float scaleY = 20.f / logo.getTexture()->getSize().y;
+        logo.setScale(scaleX, scaleY);
+        m_tableLogos.push_back(logo);
+        
+        addColumn(c.name, 110.f, y, cColor);
         addColumn(std::to_string(c.points), 350.f, y, cColor);
         addColumn(std::to_string(c.wins), 400.f, y, cColor);
         addColumn(std::to_string(c.draws), 450.f, y, cColor);
@@ -128,11 +141,15 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
 }
 
 void LeagueTableScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 40));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     
     for (const auto& row : m_tableRows) {
         window.draw(row);
+    }
+    
+    for (const auto& logo : m_tableLogos) {
+        window.draw(logo);
     }
     
     window.draw(m_backButton.rect);

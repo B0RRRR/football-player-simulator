@@ -16,6 +16,7 @@ public:
 private:
     sf::Text m_titleText;
     sf::Text m_diffText;
+    sf::Text m_speedText;
     
     struct Button {
         sf::RectangleShape rect;
@@ -26,4 +27,5 @@ private:
     std::vector<Button> m_buttons;
     
     void updateDifficultyText();
+    void updateSpeedText();
 };

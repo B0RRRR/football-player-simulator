@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "EventScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -71,7 +72,7 @@ void EventScreen::generateRandomEvent() {
         Button btn;
         btn.rect.setSize(sf::Vector2f(600.f, 80.f));
         btn.rect.setPosition(100.f, startY + i * 100.f);
-        btn.rect.setFillColor(sf::Color(100, 100, 150));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         btn.text.setString(opts[i].text);
@@ -90,7 +91,7 @@ void EventScreen::generateRandomEvent() {
 
 void EventScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -112,12 +113,12 @@ void EventScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(150, 150, 200));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             } else {
-                btn.rect.setFillColor(sf::Color(100, 100, 150));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -127,7 +128,7 @@ void EventScreen::update(sf::Time deltaTime) {
 }
 
 void EventScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 40));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_descriptionText);
     

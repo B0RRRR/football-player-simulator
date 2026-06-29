@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "TrainingScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -26,7 +27,7 @@ void TrainingScreen::init() {
     
     m_btnRect.setSize(sf::Vector2f(200.f, 50.f));
     m_btnRect.setPosition(300.f, 450.f);
-    m_btnRect.setFillColor(sf::Color(100, 100, 100));
+    m_btnRect.setFillColor(UITheme::ButtonNormal);
     m_btnText.setFont(font);
     m_btnText.setString("Start Drill");
     m_btnText.setCharacterSize(24);
@@ -121,7 +122,7 @@ void TrainingScreen::initGame() {
 void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (m_state == TrainingState::Intro) {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+            sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
             if (m_btnRect.getGlobalBounds().contains(mousePos)) {
                 initGame();
             }
@@ -159,7 +160,7 @@ void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
             }
         }
         else if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+            sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
             
             if (p->position == PlayerPosition::Midfielder) {
                 for (auto it = m_teammates.begin(); it != m_teammates.end(); ) {
@@ -187,7 +188,7 @@ void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
     }
     else if (m_state == TrainingState::Result) {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+            sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
             if (m_btnRect.getGlobalBounds().contains(mousePos)) {
                 // Advance day and exit
                 m_gameManager->getCareerManager()->advanceDay();
@@ -384,7 +385,7 @@ void TrainingScreen::drawGame(sf::RenderWindow& window) {
 }
 
 void TrainingScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 40, 20));
+    UITheme::drawGradientBackground(window);
     window.draw(m_mainText);
     window.draw(m_infoText);
     

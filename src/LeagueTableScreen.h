@@ -16,6 +16,7 @@ public:
 private:
     sf::Text m_titleText;
     std::vector<sf::Text> m_tableRows;
+    std::vector<sf::Sprite> m_tableLogos;
 
     struct Button {
         sf::RectangleShape rect;

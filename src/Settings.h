@@ -7,6 +7,7 @@ struct Settings {
     bool isFullscreen = false;
     unsigned int resWidth = 1280;
     unsigned int resHeight = 720;
+    int matchSpeed = 1; // 0: Slow, 1: Normal, 2: Fast, 3: Instant
 };
 
 // Global settings instance

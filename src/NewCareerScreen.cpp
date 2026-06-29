@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "NewCareerScreen.h"
 #include "CareerHubScreen.h"
 #include "CareerManager.h"
@@ -114,7 +115,7 @@ void NewCareerScreen::rebuildButtons() {
             btn.rect.setPosition(100.f, startY + i * 50.f);
         }
         
-        btn.rect.setFillColor(sf::Color(100, 100, 100));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         btn.text.setString(sf::String::fromUtf8(labels[i].begin(), labels[i].end()));
@@ -165,7 +166,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -218,13 +219,14 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(150, 150, 150));
+                if (btn.action == "Cancel") btn.rect.setFillColor(sf::Color(200, 50, 50));
+                else btn.rect.setFillColor(UITheme::ButtonHover);
             } else {
                 if (btn.action == "Cancel") btn.rect.setFillColor(sf::Color(150, 50, 50));
-                else btn.rect.setFillColor(sf::Color(100, 100, 100));
+                else btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -239,7 +241,7 @@ void NewCareerScreen::update(sf::Time deltaTime) {
 }
 
 void NewCareerScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 40));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_infoText);
     

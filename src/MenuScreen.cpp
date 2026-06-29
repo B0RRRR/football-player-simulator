@@ -5,6 +5,7 @@
 #include "UpgradeScreen.h"
 #include "AssetManager.h"
 #include "GameManager.h"
+#include "UITheme.h"
 #include <iostream>
 
 MenuScreen::MenuScreen() {
@@ -29,7 +30,7 @@ void MenuScreen::init() {
         
         btn.rect.setSize(sf::Vector2f(300.f, 50.f));
         btn.rect.setPosition(250.f, startY + i * 80.f);
-        btn.rect.setFillColor(sf::Color(100, 100, 100));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         btn.text.setString(buttonLabels[i]);
@@ -52,7 +53,7 @@ void MenuScreen::init() {
 void MenuScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed) {
         if (event.mouseButton.button == sf::Mouse::Left) {
-            sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+            sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
             
             for (auto& btn : m_buttons) {
                 if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -70,12 +71,12 @@ void MenuScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     
     // Hover effect
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(150, 150, 150));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             } else {
-                btn.rect.setFillColor(sf::Color(100, 100, 100));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -86,7 +87,7 @@ void MenuScreen::update(sf::Time deltaTime) {
 }
 
 void MenuScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(30, 30, 30)); // Dark background
+    UITheme::drawGradientBackground(window); // Dark background
     
     window.draw(m_titleText);
     

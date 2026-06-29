@@ -47,7 +47,7 @@ void Database::init() {
         {"Albacete", 65}, {"Almeria", 71}, {"Andorra", 63}, {"Burgos", 68},
         {"Cadiz", 73}, {"Castellon", 62}, {"Cordoba", 64}, {"Eibar", 70},
         {"Granada", 72}, {"Real Oviedo", 69}, {"Leganes", 71}, {"Girona", 83},
-        {"Oviedo CF", 68}, {"Racing de Ferrol", 68}, {"Sporting Gijon", 69}, {"Tenerife", 67},
+        {"Huesca", 68}, {"Racing de Ferrol", 68}, {"Sporting Gijon", 69}, {"Tenerife", 67},
         {"Zaragoza", 67}, {"Ceuta", 60}, {"Mallorca", 75}, {"Real Sociedad B", 65},
         {"Real Valladolid", 71}, {"Las Palmas", 75}
     };

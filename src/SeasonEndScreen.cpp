@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "SeasonEndScreen.h"
 #include "TransferScreen.h"
 #include "GameManager.h"
@@ -55,7 +56,7 @@ void SeasonEndScreen::init() {
 
 void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "NEXT") {
@@ -74,12 +75,12 @@ void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(100, 200, 100));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             } else {
-                btn.rect.setFillColor(sf::Color(70, 150, 70));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -101,7 +102,7 @@ void SeasonEndScreen::update(sf::Time deltaTime) {
 }
 
 void SeasonEndScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 40));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_statsText);
     window.draw(m_infoText);

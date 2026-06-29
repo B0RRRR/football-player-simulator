@@ -10,18 +10,54 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
     std::string homeName = isHome ? playerClub->name : opponentClub->name;
     std::string awayName = isHome ? opponentClub->name : playerClub->name;
     
-    addLog("KICK-OFF! Match starts between " + homeName + " and " + awayName + ".");
+    // We can commit Kick-Off immediately
+    MatchEvent startEvent;
+    startEvent.text = "KICK-OFF! Match starts between " + homeName + " and " + awayName + ".";
+    startEvent.type = EventType::Normal;
+    startEvent.isHome = true;
+    m_logs.push(startEvent);
+    
+    // Initial momentum is 0
+    m_momentumHistory.push_back(0.0f);
 }
 
-void MatchEngine::addLog(const std::string& msg) {
-    m_logs.push("[" + std::to_string(m_minute) + "'] " + msg);
+void MatchEngine::addLog(const std::string& msg, EventType type, bool isHome) {
+    MatchEvent e;
+    e.text = "[" + std::to_string(m_minute) + "'] " + msg;
+    e.type = type;
+    e.isHome = isHome;
+    m_logs.push(e);
 }
 
-std::string MatchEngine::popRecentLog() {
-    if (m_logs.empty()) return "";
-    std::string log = m_logs.front();
+MatchEvent MatchEngine::popRecentLog() {
+    if (m_logs.empty()) return MatchEvent{"", EventType::Normal, true};
+    MatchEvent log = m_logs.front();
     m_logs.pop();
     return log;
+}
+
+void MatchEngine::commitEvent(const MatchEvent& event) {
+    // This is called by MatchScreen when the animation is completely finished.
+    // We update stats based on event type.
+    if (event.type == EventType::Goal) {
+        if (event.isHome) { m_homeStats.goals++; m_homeStats.shots++; }
+        else { m_awayStats.goals++; m_awayStats.shots++; }
+    } else if (event.type == EventType::Chance) {
+        if (event.isHome) m_homeStats.shots++;
+        else m_awayStats.shots++;
+    } else if (event.type == EventType::Card) {
+        if (event.text.find("RED") != std::string::npos) {
+            if (event.isHome) m_homeStats.redCards++;
+            else m_awayStats.redCards++;
+        } else {
+            if (event.isHome) m_homeStats.yellowCards++;
+            else m_awayStats.yellowCards++;
+        }
+    }
+}
+
+void MatchEngine::triggerMinigame() {
+    m_state = MatchState::MinigameTriggered;
 }
 
 void MatchEngine::updateMinute() {
@@ -29,100 +65,107 @@ void MatchEngine::updateMinute() {
     
     m_minute++;
     if (m_minute >= 90) {
-        addLog("FULL TIME! The referee blows the final whistle.");
+        addLog("FULL TIME! The referee blows the final whistle.", EventType::Normal, true);
         m_state = MatchState::Finished;
         return;
     }
     
-    // Determine random event
     int randVal = rand() % 100;
     
-    // Base chances
-    int pStrength = m_playerClub->strength - m_homeStats.redCards * 15; // Assuming player is home? Wait, I need to check m_isHome
+    int pStrength = m_playerClub->strength - m_homeStats.redCards * 15;
     if (!m_isHome) pStrength = m_playerClub->strength - m_awayStats.redCards * 15;
     
     int oStrength = m_opponentClub->strength - m_awayStats.redCards * 15;
     if (!m_isHome) oStrength = m_opponentClub->strength - m_homeStats.redCards * 15;
     
-    // Roughly 10-15 chances per match per team based on strength differences
     int playerTeamChance = 4 + (pStrength - oStrength) / 10;
     int oppTeamChance = 4 + (oStrength - pStrength) / 10;
     
     if (playerTeamChance < 1) playerTeamChance = 1;
     if (oppTeamChance < 1) oppTeamChance = 1;
     
-    // In any given minute:
-    // 0 to playerTeamChance -> Player's team gets a chance
-    // playerTeamChance to playerTeamChance+oppTeamChance -> Opponent gets a chance
+    float baseMomentum = (m_isHome ? (pStrength - oStrength) : (oStrength - pStrength)); 
+    float currentMomentum = baseMomentum + ((rand() % 40) - 20);
+    
     if (randVal < playerTeamChance) {
-        // Player's team attacking
-        if (m_isHome) m_homeStats.shots++; else m_awayStats.shots++;
+        currentMomentum += (m_isHome ? 30.0f : -30.0f);
+        m_playerTeamAttacking = true;
         
-        // Minigame only for Forward or Midfielder when attacking
-        bool triggerMinigame = false;
-        if (m_player->position == PlayerPosition::Forward && (rand() % 100 < 40)) triggerMinigame = true;
-        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 30)) triggerMinigame = true;
+        bool triggerMg = false;
+        if (m_player->position == PlayerPosition::Forward && (rand() % 100 < 40)) triggerMg = true;
+        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 30)) triggerMg = true;
         
-        if (triggerMinigame) {
-            m_state = MatchState::MinigameTriggered;
-            m_playerTeamAttacking = true;
+        if (triggerMg) {
+            addLog("Minigame triggering for player", EventType::PendingMinigame, m_isHome);
         } else {
-            simulateAIEvent(true); // Player's team AI simulates chance
+            simulateAIEvent(true);
         }
     } else if (randVal < playerTeamChance + oppTeamChance) {
-        // Opponent's team attacking
-        if (m_isHome) m_awayStats.shots++; else m_homeStats.shots++;
+        currentMomentum += (m_isHome ? -30.0f : 30.0f);
+        m_playerTeamAttacking = false;
         
-        // Minigame only for Defender, Goalkeeper, or Midfielder when defending
-        bool triggerMinigame = false;
-        if (m_player->position == PlayerPosition::Defender && (rand() % 100 < 40)) triggerMinigame = true;
-        if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) triggerMinigame = true;
-        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) triggerMinigame = true;
+        bool triggerMg = false;
+        if (m_player->position == PlayerPosition::Defender && (rand() % 100 < 40)) triggerMg = true;
+        if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) triggerMg = true;
+        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) triggerMg = true;
         
-        if (triggerMinigame) {
-            m_state = MatchState::MinigameTriggered;
-            m_playerTeamAttacking = false;
+        if (triggerMg) {
+            addLog("Minigame triggering against player", EventType::PendingMinigame, !m_isHome);
         } else {
-            simulateAIEvent(false); // Opponent simulates chance
-        }
-    }
-}
-
-void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
-    // If it's a goal (~15% of shots go in)
-    if (rand() % 100 < 15) {
-        if (playerTeamAttacking) {
-            if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
-            addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!");
-        } else {
-            if (m_isHome) m_awayStats.goals++; else m_homeStats.goals++;
-            addLog("GOAL! " + m_opponentClub->name + " finds the back of the net!");
-        }
-    } else {
-        if (rand() % 2 == 0) {
-            addLog("Miss! The shot goes wide of the post.");
-        } else {
-            addLog("Saved! The goalkeeper makes an easy stop.");
+            simulateAIEvent(false);
         }
     }
     
-    // Cards
-    if (rand() % 100 < 15) { // 15% chance of a foul leading to a card (increased from 5%)
-        if (rand() % 100 < 10) { // 10% of cards are RED
+    if (currentMomentum > 100.0f) currentMomentum = 100.0f;
+    if (currentMomentum < -100.0f) currentMomentum = -100.0f;
+    
+    if (!m_momentumHistory.empty()) {
+        currentMomentum = (m_momentumHistory.back() * 0.6f) + (currentMomentum * 0.4f);
+    }
+    m_momentumHistory.push_back(currentMomentum);
+    
+    // Dynamically calculate possession based on average momentum
+    float avgMomentum = 0.0f;
+    for (float m : m_momentumHistory) avgMomentum += m;
+    avgMomentum /= m_momentumHistory.size();
+    
+    // avgMomentum is between -100 (Away dominance) and 100 (Home dominance)
+    // Map -100..100 to 0..100 for home possession
+    int homePossession = 50 + static_cast<int>(avgMomentum / 2.0f);
+    if (homePossession > 80) homePossession = 80; // realistic cap
+    if (homePossession < 20) homePossession = 20; // realistic floor
+    
+    m_homeStats.possession = homePossession;
+    m_awayStats.possession = 100 - homePossession;
+}
+
+void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
+    if (rand() % 100 < 15) {
+        if (playerTeamAttacking) {
+            addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!", EventType::Goal, m_isHome);
+        } else {
+            addLog("GOAL! " + m_opponentClub->name + " finds the back of the net!", EventType::Goal, !m_isHome);
+        }
+    } else {
+        if (rand() % 2 == 0) {
+            addLog("Miss! The shot goes wide of the post.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome);
+        } else {
+            addLog("Saved! The goalkeeper makes an easy stop.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome);
+        }
+    }
+    
+    if (rand() % 100 < 15) {
+        if (rand() % 100 < 10) {
             if (rand() % 2 == 0) {
-                if (m_isHome) m_homeStats.redCards++; else m_awayStats.redCards++;
-                addLog("RED CARD! A horrible challenge leaves " + m_playerClub->name + " with 10 men!");
+                addLog("RED CARD! A horrible challenge leaves " + m_playerClub->name + " with 10 men!", EventType::Card, m_isHome);
             } else {
-                if (m_isHome) m_awayStats.redCards++; else m_homeStats.redCards++;
-                addLog("RED CARD! A horrible challenge leaves " + m_opponentClub->name + " with 10 men!");
+                addLog("RED CARD! A horrible challenge leaves " + m_opponentClub->name + " with 10 men!", EventType::Card, !m_isHome);
             }
         } else {
             if (rand() % 2 == 0) {
-                if (m_isHome) m_homeStats.yellowCards++; else m_awayStats.yellowCards++;
-                addLog("Yellow card for a reckless tackle by " + m_playerClub->name + ".");
+                addLog("Yellow card for a reckless tackle by " + m_playerClub->name + ".", EventType::Card, m_isHome);
             } else {
-                if (m_isHome) m_awayStats.yellowCards++; else m_homeStats.yellowCards++;
-                addLog("Yellow card for a reckless tackle by " + m_opponentClub->name + ".");
+                addLog("Yellow card for a reckless tackle by " + m_opponentClub->name + ".", EventType::Card, !m_isHome);
             }
         }
     }
@@ -133,47 +176,41 @@ void MatchEngine::processMinigameResult(bool success) {
         m_playerRating += 0.5f;
         if (m_playerRating > 10.0f) m_playerRating = 10.0f;
         
-        // If forward or midfielder, maybe it's a goal
         if (m_player->position == PlayerPosition::Forward) {
-            if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
-            addLog("GOAL!!! " + m_player->name + " scores a magnificent goal!");
+            addLog("GOAL!!! " + m_player->name + " scores a magnificent goal!", EventType::Goal, m_isHome);
             m_player->goals++;
         } else if (m_player->position == PlayerPosition::Midfielder) {
             if (m_playerTeamAttacking) {
                 if (rand() % 2 == 0) {
-                    if (m_isHome) m_homeStats.goals++; else m_awayStats.goals++;
-                    addLog("GOAL! " + m_player->name + " provides a beautiful assist!");
+                    addLog("GOAL! " + m_player->name + " provides a beautiful assist!", EventType::Goal, m_isHome);
                     m_player->assists++;
                 } else {
-                    addLog("Great pass! " + m_player->name + " creates a dangerous chance.");
+                    addLog("Great pass! " + m_player->name + " creates a dangerous chance.", EventType::Chance, m_isHome);
                 }
             } else {
-                addLog("Great interception! " + m_player->name + " wins the ball back.");
+                addLog("Great interception! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome);
             }
         } else if (m_player->position == PlayerPosition::Defender) {
-            addLog("Great tackle! " + m_player->name + " stops a dangerous attack.");
+            addLog("Great tackle! " + m_player->name + " stops a dangerous attack.", EventType::Chance, m_isHome);
         } else if (m_player->position == PlayerPosition::Goalkeeper) {
-            addLog("What a save! " + m_player->name + " keeps the ball out!");
+            addLog("What a save! " + m_player->name + " keeps the ball out!", EventType::Chance, m_isHome);
         }
     } else {
         m_playerRating -= 0.3f;
         if (m_playerRating < 1.0f) m_playerRating = 1.0f;
         
         if (m_player->position == PlayerPosition::Forward) {
-            addLog(m_player->name + " misses a golden opportunity!");
+            addLog(m_player->name + " misses a golden opportunity!", EventType::Chance, m_isHome);
         } else if (m_player->position == PlayerPosition::Midfielder) {
-            addLog(m_player->name + " loses the ball with a bad pass.");
+            addLog(m_player->name + " loses the ball with a bad pass.", EventType::Chance, m_isHome);
         } else if (m_player->position == PlayerPosition::Defender) {
-            // Opponent might score!
             if (rand() % 100 < 50) {
-                if (m_isHome) m_awayStats.goals++; else m_homeStats.goals++;
-                addLog("GOAL! " + m_player->name + " fails to tackle, and the opponent scores!");
+                addLog("GOAL! " + m_opponentClub->name + " scores after a mistake by " + m_player->name + "!", EventType::Goal, !m_isHome);
             } else {
-                addLog(m_player->name + " is beaten, but the shot misses.");
+                addLog(m_player->name + " gets beaten, but the opponent misses.", EventType::Chance, !m_isHome);
             }
         } else if (m_player->position == PlayerPosition::Goalkeeper) {
-            if (m_isHome) m_awayStats.goals++; else m_homeStats.goals++;
-            addLog("GOAL! " + m_player->name + " dives but can't reach it.");
+            addLog("GOAL! " + m_opponentClub->name + " scores! " + m_player->name + " couldn't stop it.", EventType::Goal, !m_isHome);
         }
     }
     

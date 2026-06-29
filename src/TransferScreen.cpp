@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "TransferScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -75,7 +76,7 @@ void TransferScreen::generateOffers() {
         Button btn;
         btn.rect.setSize(sf::Vector2f(600.f, 60.f));
         btn.rect.setPosition(100.f, startY + i * 80.f);
-        btn.rect.setFillColor(sf::Color(70, 100, 70));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         std::string label = m_offers[i].club->name + " (STR: " + std::to_string(m_offers[i].club->strength) + ") - Salary: $" + std::to_string(m_offers[i].offeredSalary) + "/week";
@@ -112,7 +113,7 @@ void TransferScreen::generateOffers() {
 
 void TransferScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "CANCEL") {
@@ -144,14 +145,14 @@ void TransferScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(100, 150, 100));
-                if (btn.action == "CANCEL") btn.rect.setFillColor(sf::Color(200, 80, 80));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
+                if (btn.action == "CANCEL") btn.rect.setFillColor(UITheme::ButtonNormal);
             } else {
-                btn.rect.setFillColor(sf::Color(70, 100, 70));
-                if (btn.action == "CANCEL") btn.rect.setFillColor(sf::Color(150, 50, 50));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
+                if (btn.action == "CANCEL") btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -160,7 +161,7 @@ void TransferScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
 void TransferScreen::update(sf::Time deltaTime) {}
 
 void TransferScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(30, 30, 50));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_infoText);
     for (const auto& btn : m_buttons) {

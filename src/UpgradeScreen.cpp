@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "UpgradeScreen.h"
 #include "CareerHubScreen.h"
 #include "AssetManager.h"
@@ -35,7 +36,7 @@ void UpgradeScreen::init() {
         
         btn.rect.setSize(sf::Vector2f(400.f, 40.f));
         btn.rect.setPosition(200.f, startY + i * 50.f);
-        btn.rect.setFillColor(sf::Color(100, 100, 100));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         // Text is set dynamically in update()
@@ -50,7 +51,7 @@ void UpgradeScreen::init() {
 
 void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         Player* player = m_gameManager->getPlayer();
         
         for (auto& btn : m_buttons) {
@@ -102,12 +103,12 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
     
     // Hover effects
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(150, 150, 150));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             } else {
-                btn.rect.setFillColor(sf::Color(100, 100, 100));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -155,7 +156,7 @@ void UpgradeScreen::update(sf::Time deltaTime) {
 }
 
 void UpgradeScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(30, 30, 30));
+    UITheme::drawGradientBackground(window);
     
     window.draw(m_titleText);
     window.draw(m_xpText);

@@ -3,6 +3,7 @@
 #include "GameManager.h"
 #include "AssetManager.h"
 #include "Settings.h"
+#include "UITheme.h"
 #include <memory>
 
 SettingsScreen::SettingsScreen() {
@@ -14,29 +15,35 @@ void SettingsScreen::init() {
     m_titleText.setFont(font);
     m_titleText.setString("Settings");
     m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(sf::Color::White);
-    m_titleText.setPosition(300.f, 50.f);
+    m_titleText.setFillColor(UITheme::TextWhite);
+    m_titleText.setPosition(400.f, 50.f);
     
     m_diffText.setFont(font);
     m_diffText.setCharacterSize(24);
-    m_diffText.setFillColor(sf::Color::Yellow);
-    m_diffText.setPosition(250.f, 200.f);
+    m_diffText.setFillColor(UITheme::Highlight);
+    m_diffText.setPosition(250.f, 150.f);
     updateDifficultyText();
     
+    m_speedText.setFont(font);
+    m_speedText.setCharacterSize(24);
+    m_speedText.setFillColor(UITheme::Highlight);
+    m_speedText.setPosition(250.f, 250.f);
+    updateSpeedText();
+    
     // Setup buttons
-    std::vector<std::string> buttonLabels = {"Change Difficulty", "Back to Menu"};
-    float startY = 300.f;
+    std::vector<std::string> buttonLabels = {"Change Difficulty", "Change Match Speed", "Back to Menu"};
+    float startY = 350.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
         btn.rect.setSize(sf::Vector2f(300.f, 50.f));
         btn.rect.setPosition(250.f, startY + i * 80.f);
-        btn.rect.setFillColor(sf::Color(100, 100, 100));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         btn.text.setString(buttonLabels[i]);
         btn.text.setCharacterSize(24);
-        btn.text.setFillColor(sf::Color::White);
+        btn.text.setFillColor(UITheme::TextWhite);
         
         sf::FloatRect textRect = btn.text.getLocalBounds();
         btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top  + textRect.height/2.0f);
@@ -57,9 +64,20 @@ void SettingsScreen::updateDifficultyText() {
     m_diffText.setString("Current Difficulty: " + diffStr);
 }
 
+void SettingsScreen::updateSpeedText() {
+    std::string speedStr = "Normal";
+    if (g_settings.matchSpeed == 0) speedStr = "Slow";
+    if (g_settings.matchSpeed == 2) speedStr = "Fast";
+    if (g_settings.matchSpeed == 3) speedStr = "Instant";
+    m_speedText.setString("Current Match Speed: " + speedStr);
+}
+
 void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        // Adjust for view scaling
+        sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
+        
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "Back to Menu") {
@@ -67,18 +85,23 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
                 } else if (btn.action == "Change Difficulty") {
                     g_settings.difficulty = (g_settings.difficulty + 1) % 3;
                     updateDifficultyText();
+                } else if (btn.action == "Change Match Speed") {
+                    g_settings.matchSpeed = (g_settings.matchSpeed + 1) % 4;
+                    updateSpeedText();
                 }
             }
         }
     }
     
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseMove.x), static_cast<float>(event.mouseMove.y));
+        sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
+        sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
+        
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(150, 150, 150));
+                btn.rect.setFillColor(UITheme::ButtonHover);
             } else {
-                btn.rect.setFillColor(sf::Color(100, 100, 100));
+                btn.rect.setFillColor(UITheme::ButtonNormal);
             }
         }
     }
@@ -87,9 +110,10 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
 void SettingsScreen::update(sf::Time deltaTime) {}
 
 void SettingsScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(40, 40, 60)); // Slightly blueish dark background
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_diffText);
+    window.draw(m_speedText);
     for (const auto& btn : m_buttons) {
         window.draw(btn.rect);
         window.draw(btn.text);

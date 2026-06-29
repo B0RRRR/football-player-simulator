@@ -18,6 +18,21 @@ enum class MatchState {
     Finished
 };
 
+enum class EventType {
+    Normal,
+    Goal,
+    Chance,
+    Foul,
+    Card,
+    PendingMinigame
+};
+
+struct MatchEvent {
+    std::string text;
+    EventType type;
+    bool isHome; // true if it's the home team doing the action
+};
+
 class Player; // Forward declaration
 
 class MatchEngine {
@@ -25,6 +40,8 @@ public:
     MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Player* player);
     
     void updateMinute();
+    void commitEvent(const MatchEvent& event);
+    void triggerMinigame();
     void processMinigameResult(bool success);
     
     MatchState getState() const { return m_state; }
@@ -36,8 +53,10 @@ public:
     Club* getPlayerClub() const { return m_playerClub; }
     Club* getOpponentClub() const { return m_opponentClub; }
     
-    std::string popRecentLog();
+    MatchEvent popRecentLog();
     bool hasLogs() const { return !m_logs.empty(); }
+
+    const std::vector<float>& getMomentumHistory() const { return m_momentumHistory; }
 
     int getHomeScore() const { return m_homeStats.goals; }
     int getAwayScore() const { return m_awayStats.goals; }
@@ -46,7 +65,7 @@ public:
 
 private:
     void simulateAIEvent(bool playerTeamAttacking);
-    void addLog(const std::string& msg);
+    void addLog(const std::string& msg, EventType type = EventType::Normal, bool isHome = true);
 
     Club* m_playerClub;
     Club* m_opponentClub;
@@ -61,5 +80,6 @@ private:
     float m_playerRating;
     MatchState m_state;
     
-    std::queue<std::string> m_logs;
+    std::queue<MatchEvent> m_logs;
+    std::vector<float> m_momentumHistory;
 };

@@ -1,3 +1,4 @@
+#include "UITheme.h"
 #include "EuropeanCupScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -26,7 +27,7 @@ void EuropeanCupScreen::init() {
         Button btn;
         btn.rect.setSize(sf::Vector2f(200.f, 40.f));
         btn.rect.setPosition(x, y);
-        btn.rect.setFillColor(sf::Color(70, 70, 70));
+        btn.rect.setFillColor(UITheme::ButtonNormal);
         
         btn.text.setFont(font);
         btn.text.setString(label);
@@ -149,7 +150,7 @@ void EuropeanCupScreen::updateBracketVisuals() {
 
 void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (event.type == sf::Event::MouseButtonPressed) {
-        sf::Vector2f mousePos(static_cast<float>(event.mouseButton.x), static_cast<float>(event.mouseButton.y));
+        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "CL") {
@@ -173,7 +174,7 @@ void EuropeanCupScreen::update(sf::Time deltaTime) {
 }
 
 void EuropeanCupScreen::draw(sf::RenderWindow& window) {
-    window.clear(sf::Color(20, 20, 30));
+    UITheme::drawGradientBackground(window);
     window.draw(m_titleText);
     window.draw(m_statusText);
     
