@@ -1013,7 +1013,12 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
     } else if (globalBDist > 0.f) {
         sf::Vector2f bdir = m_ballTarget - m_visualBall.getPosition();
         float bspeed = (m_visualState == VisualState::Attacking) ? 500.f : 400.f;
-        m_visualBall.move((bdir.x / globalBDist) * bspeed * dt, (bdir.y / globalBDist) * bspeed * dt);
+        float moveDist = bspeed * dt;
+        if (moveDist >= globalBDist) {
+            m_visualBall.setPosition(m_ballTarget);
+        } else {
+            m_visualBall.move((bdir.x / globalBDist) * moveDist, (bdir.y / globalBDist) * moveDist);
+        }
     }
 }
 
@@ -1235,7 +1240,10 @@ void MatchScreen::draw(sf::RenderWindow& window) {
     window.draw(m_leftGoal); window.draw(m_rightGoal);
     
     Player* p = m_gameManager->getPlayer();
-    int userPosIdx = (int)p->position - 1;
+    int userPosIdx = 0;
+    if (p->position == PlayerPosition::Defender) userPosIdx = 3;
+    else if (p->position == PlayerPosition::Midfielder) userPosIdx = 7;
+    else if (p->position == PlayerPosition::Forward) userPosIdx = 10;
     
     for (size_t i = 0; i < m_dots.size(); ++i) {
         int localIdx = (int)i % 11;
