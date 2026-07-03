@@ -28,6 +28,7 @@ private:
     sf::RenderWindow m_window;
     sf::View m_view;
     std::shared_ptr<Screen> m_currentScreen;
+    std::shared_ptr<Screen> m_pendingScreen;
     Player* m_player;
     Database m_database;
     CareerManager* m_careerManager;
