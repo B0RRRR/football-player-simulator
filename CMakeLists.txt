@@ -4,6 +4,7 @@ project(FootballSim VERSION 1.0)
 # Specify C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g -fsanitize=address,undefined")
 
 # Find SFML (Graphics, Window, System, Audio)
 find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)

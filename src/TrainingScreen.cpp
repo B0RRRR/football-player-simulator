@@ -328,9 +328,13 @@ void TrainingScreen::finishGame() {
     Player* p = m_gameManager->getPlayer();
     p->experience += m_xpEarned;
     
+    float trustGained = (accuracy > 0.5f) ? 2.0f : 0.0f;
+    p->coachTrust += trustGained;
+    if (p->coachTrust > 100.f) p->coachTrust = 100.f;
+    
     m_mainText.setString("Training Completed!");
     m_infoText.setString("Score: " + std::to_string(m_score) + " / " + std::to_string(m_maxScore) + 
-                         "\nXP Earned: +" + std::to_string(m_xpEarned) + "\nEnergy: -15");
+                         "\nXP Earned: +" + std::to_string(m_xpEarned) + "\nCoach Trust: +" + std::to_string((int)trustGained) + "\nEnergy: -15");
     
     m_btnText.setString("Continue");
     sf::FloatRect tr = m_btnText.getLocalBounds();

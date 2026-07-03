@@ -45,6 +45,7 @@ void EuropeanCupScreen::init() {
     createBtn("Champions League", 50.f, 140.f, "CL");
     createBtn("Europa League", 260.f, 140.f, "EL");
     createBtn("Int. Tournament", 470.f, 140.f, "INT");
+    createBtn("Int. Tournament", 470.f, 140.f, "INT");
     createBtn("Back", 600.f, 520.f, "BACK");
     
     updateBracketVisuals();

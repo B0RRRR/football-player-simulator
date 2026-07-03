@@ -11,7 +11,10 @@ enum class VisualState {
     Attacking,
     GoalCelebration,
     WaitingForMinigame,
-    GoalKick
+    GoalKick,
+    PassingScript,
+    PressingScript,
+    Foul
 };
 
 struct PlayerDot {
@@ -32,6 +35,7 @@ public:
 private:
     void initMinigame();
     void updateMinigame(sf::Time deltaTime);
+    bool hasRedCard(int globalIdx) const;
     void updateVisuals(sf::Time deltaTime);
     void resetToKickoff();
 
@@ -50,6 +54,11 @@ private:
     sf::Text m_statsTitle;
     sf::Text m_homeStatsText;
     sf::Text m_awayStatsText;
+    sf::RectangleShape m_btnSkipRect;
+    sf::Text m_btnSkipText;
+    
+    int m_foulPlayerIdx;
+    int m_foulVictimIdx;
     
     std::vector<MatchEvent> m_visibleLogs;
     std::vector<sf::RectangleShape> m_momentumBars;
@@ -69,11 +78,17 @@ private:
     VisualState m_visualState;
     float m_stateTimer;
     MatchEvent m_pendingEvent;
+    int m_attackType;
+    int m_attackWingerIdx;
+    float m_shotTargetY;
+    int m_attackFwdIdx;
+    int m_attackPhase;
     
     float m_simTimer;
     
     // Minigame Elements
     bool m_minigameActive;
+    bool m_midfielderSoloRun;
     float m_minigameTimer;
     sf::RectangleShape m_minigameOverlay;
     sf::CircleShape m_playerSprite;
@@ -85,4 +100,16 @@ private:
     float m_targetDir;
     float m_enemyDir;
     float m_enemySpeed;
+    
+    struct Button {
+        sf::RectangleShape rect;
+        sf::Text text;
+        std::string action;
+        sf::Color baseColor = sf::Color(100, 100, 100);
+        bool isHovered = false;
+    };
+    std::vector<Button> m_speedButtons;
+    int m_matchSpeedMode; // 0=Slow, 1=Normal, 2=Fast
+    bool m_isMinigameResultPending;
+    float m_scriptTimer;
 };

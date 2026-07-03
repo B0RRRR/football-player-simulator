@@ -19,6 +19,21 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
     
     // Initial momentum is 0
     m_momentumHistory.push_back(0.0f);
+    
+    m_userSubbedOff = false;
+    
+    bool userIsPlaying = (m_player && m_player->injuredDays == 0 && m_player->suspensionMatches == 0 && m_player->coachTrust >= 30.0f);
+    
+    if (userIsPlaying) {
+        if (rand() % 100 < 8) m_userInjuryMinute = 10 + rand() % 75;
+        if (rand() % 100 < 5) m_userRedCardMinute = 10 + rand() % 75;
+    }
+    
+    if (rand() % 100 < 10) {
+        m_aiRedCardMinute = 10 + rand() % 75;
+        m_aiRedCardIsHome = (rand() % 2 == 0);
+        m_aiRedCardIndex = 1 + rand() % 10; // 1 to 10 to avoid Goalkeeper
+    }
 }
 
 void MatchEngine::addLog(const std::string& msg, EventType type, bool isHome) {
@@ -68,6 +83,26 @@ void MatchEngine::updateMinute() {
         addLog("FULL TIME! The referee blows the final whistle.", EventType::Normal, true);
         m_state = MatchState::Finished;
         return;
+    }
+    
+    if (m_minute == m_userInjuryMinute && !m_userSubbedOff) {
+        addLog("INJURY! [USER]", EventType::Normal, m_isHome);
+        m_userSubbedOff = true;
+        m_player->injuredDays = 14 + rand() % 21; // 2 to 5 weeks
+    }
+    
+    if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
+        addLog("RED CARD! [USER]", EventType::Card, m_isHome);
+        m_userSubbedOff = true;
+        m_player->suspensionMatches = 2; // user suspended
+        if (m_isHome) { m_homeStats.redCards++; m_homeRedCards.push_back(-1); } // -1 indicates user
+        else { m_awayStats.redCards++; m_awayRedCards.push_back(-1); }
+    }
+    
+    if (m_minute == m_aiRedCardMinute && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
+        addLog("RED CARD! [AI] " + std::to_string(m_aiRedCardIndex), EventType::Card, m_aiRedCardIsHome);
+        if (m_aiRedCardIsHome) { m_homeStats.redCards++; m_homeRedCards.push_back(m_aiRedCardIndex); }
+        else { m_awayStats.redCards++; m_awayRedCards.push_back(m_aiRedCardIndex); }
     }
     
     int randVal = rand() % 100;
@@ -171,7 +206,7 @@ void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
     }
 }
 
-void MatchEngine::processMinigameResult(bool success) {
+void MatchEngine::processMinigameResult(bool success, int actionType) {
     if (success) {
         m_playerRating += 0.5f;
         if (m_playerRating > 10.0f) m_playerRating = 10.0f;
@@ -181,19 +216,22 @@ void MatchEngine::processMinigameResult(bool success) {
             m_player->goals++;
         } else if (m_player->position == PlayerPosition::Midfielder) {
             if (m_playerTeamAttacking) {
-                if (rand() % 2 == 0) {
-                    addLog("GOAL! " + m_player->name + " provides a beautiful assist!", EventType::Goal, m_isHome);
-                    m_player->assists++;
+                if (actionType == 1) { // Solo Run
+                    addLog("GOAL!!! " + m_player->name + " scores a magnificent solo goal!", EventType::Goal, m_isHome);
+                    m_player->goals++;
+                } else if (actionType == 2) { // Backward/Sideways pass
+                    addLog("Good pass by " + m_player->name + " to keep possession.", EventType::Normal, m_isHome);
                 } else {
                     addLog("Great pass! " + m_player->name + " creates a dangerous chance.", EventType::Chance, m_isHome);
+                    simulateAIEvent(true);
                 }
             } else {
-                addLog("Great interception! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome);
+                addLog("Great tackle! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome);
             }
         } else if (m_player->position == PlayerPosition::Defender) {
             addLog("Great tackle! " + m_player->name + " stops a dangerous attack.", EventType::Chance, m_isHome);
         } else if (m_player->position == PlayerPosition::Goalkeeper) {
-            addLog("What a save! " + m_player->name + " keeps the ball out!", EventType::Chance, m_isHome);
+            addLog("What a save! " + m_player->name + " keeps the ball out!", EventType::Chance, !m_isHome);
         }
     } else {
         m_playerRating -= 0.3f;
@@ -202,7 +240,16 @@ void MatchEngine::processMinigameResult(bool success) {
         if (m_player->position == PlayerPosition::Forward) {
             addLog(m_player->name + " misses a golden opportunity!", EventType::Chance, m_isHome);
         } else if (m_player->position == PlayerPosition::Midfielder) {
-            addLog(m_player->name + " loses the ball with a bad pass.", EventType::Chance, m_isHome);
+            if (m_playerTeamAttacking) {
+                if (actionType == 1) { // Solo Run
+                    addLog(m_player->name + " makes a great run but misses the shot!", EventType::Chance, m_isHome);
+                } else {
+                    addLog(m_player->name + " loses the ball with a bad pass.", EventType::Chance, !m_isHome);
+                }
+            } else {
+                addLog(m_player->name + " gets beaten, opponent moves forward.", EventType::Chance, !m_isHome);
+                simulateAIEvent(false);
+            }
         } else if (m_player->position == PlayerPosition::Defender) {
             if (rand() % 100 < 50) {
                 addLog("GOAL! " + m_opponentClub->name + " scores after a mistake by " + m_player->name + "!", EventType::Goal, !m_isHome);

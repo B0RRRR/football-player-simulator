@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <random>
+#include <random>
 
 TransferScreen::TransferScreen() {
 }
@@ -135,6 +136,7 @@ void TransferScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
                         p->currentClub = btn.offer.club; // just use the pointer if fallback fails
                     }
                     p->salary = btn.offer.offeredSalary;
+                    p->coachTrust = 50.0f;
                     
                     // Reset stats for new club if needed, but not strictly necessary
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());

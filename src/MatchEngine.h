@@ -10,6 +10,7 @@ struct MatchStats {
     int possession = 50;
     int yellowCards = 0;
     int redCards = 0;
+
 };
 
 enum class MatchState {
@@ -42,7 +43,7 @@ public:
     void updateMinute();
     void commitEvent(const MatchEvent& event);
     void triggerMinigame();
-    void processMinigameResult(bool success);
+    void processMinigameResult(bool success, int actionType = 0);
     
     MatchState getState() const { return m_state; }
     int getMinute() const { return m_minute; }
@@ -62,6 +63,10 @@ public:
     int getAwayScore() const { return m_awayStats.goals; }
     
     bool isHome() const { return m_isHome; }
+    
+    const std::vector<int>& getHomeRedCards() const { return m_homeRedCards; }
+    const std::vector<int>& getAwayRedCards() const { return m_awayRedCards; }
+    bool isUserSubbedOff() const { return m_userSubbedOff; }
 
 private:
     void simulateAIEvent(bool playerTeamAttacking);
@@ -72,6 +77,7 @@ private:
     Player* m_player;
     bool m_isHome;
     bool m_playerTeamAttacking;
+
     
     MatchStats m_homeStats;
     MatchStats m_awayStats;
@@ -79,6 +85,16 @@ private:
     int m_minute;
     float m_playerRating;
     MatchState m_state;
+    
+    std::vector<int> m_homeRedCards;
+    std::vector<int> m_awayRedCards;
+    bool m_userSubbedOff;
+    
+    int m_userInjuryMinute = -1;
+    int m_userRedCardMinute = -1;
+    int m_aiRedCardMinute = -1;
+    bool m_aiRedCardIsHome = false;
+    int m_aiRedCardIndex = -1;
     
     std::queue<MatchEvent> m_logs;
     std::vector<float> m_momentumHistory;

@@ -27,4 +27,5 @@ private:
     };
     
     std::vector<Button> m_buttons;
+    Button m_btnSettings;
 };

@@ -31,6 +31,7 @@ void MatchStatsScreen::init() {
     ss << std::left << std::setw(20) << std::to_string(home.shots) << " Shots " << std::to_string(away.shots) << "\n";
     ss << std::left << std::setw(20) << std::to_string(home.yellowCards) << " Yellow Cards " << std::to_string(away.yellowCards) << "\n";
     ss << std::left << std::setw(20) << std::to_string(home.redCards) << " Red Cards " << std::to_string(away.redCards) << "\n";
+    ss << std::left << std::setw(20) << std::to_string(home.redCards) << " Red Cards " << std::to_string(away.redCards) << "\n";
     
     m_statsText.setFont(font);
     m_statsText.setCharacterSize(24);
@@ -41,18 +42,35 @@ void MatchStatsScreen::init() {
     std::stringstream rss;
     rss << std::fixed << std::setprecision(1) << m_engine->getPlayerRating();
     
-    // Accumulate rating
     Player* p = m_gameManager->getPlayer();
+    
+    std::string ratingStr = "Your Rating: " + rss.str() + " / 10.0";
     if (p) {
-        p->totalSeasonRating += m_engine->getPlayerRating();
-        p->matchesPlayedThisSeason++;
+        if (p->coachTrust < 30.0f) {
+            ratingStr = "Benched (Coach Trust too low)";
+        } else {
+            p->totalSeasonRating += m_engine->getPlayerRating();
+            p->matchesPlayedThisSeason++;
+            
+            float rating = m_engine->getPlayerRating();
+            float trustChange = 0.0f;
+            if (rating >= 6.5f) trustChange = 5.0f;
+            else if (rating < 6.0f) trustChange = -5.0f;
+            
+            p->coachTrust += trustChange;
+            if (p->coachTrust > 100.f) p->coachTrust = 100.f;
+            if (p->coachTrust < 0.f) p->coachTrust = 0.f;
+            
+            if (trustChange > 0.0f) ratingStr += "\nTrust: +5";
+            else if (trustChange < 0.0f) ratingStr += "\nTrust: -5";
+        }
     }
     
     m_ratingText.setFont(font);
     m_ratingText.setCharacterSize(30);
     m_ratingText.setFillColor(sf::Color::Cyan);
     m_ratingText.setPosition(250.f, 350.f);
-    m_ratingText.setString("Your Rating: " + rss.str() + " / 10.0");
+    m_ratingText.setString(ratingStr);
     
     m_btnContinue.setSize(sf::Vector2f(200.f, 50.f));
     m_btnContinue.setPosition(300.f, 450.f);

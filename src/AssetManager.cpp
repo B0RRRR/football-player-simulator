@@ -54,3 +54,4 @@ sf::Texture& AssetManager::getTexture(const std::string& name, bool isFlag) {
     }
     return m_textures.at(name);
 }
+

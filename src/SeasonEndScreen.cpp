@@ -69,6 +69,10 @@ void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
                 } else if (btn.action == "CUPS") {
                     m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
+                } else if (btn.action == "LEAGUE") {
+                    m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
+                } else if (btn.action == "CUPS") {
+                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
                 }
             }
         }

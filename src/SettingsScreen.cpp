@@ -4,6 +4,7 @@
 #include "AssetManager.h"
 #include "Settings.h"
 #include "UITheme.h"
+#include "CareerHubScreen.h"
 #include <memory>
 
 SettingsScreen::SettingsScreen() {
@@ -81,7 +82,11 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "Back to Menu") {
-                    m_gameManager->changeScreen(std::make_shared<MenuScreen>());
+                    if (m_gameManager->getPlayer()->currentClub != nullptr) {
+                        m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                    } else {
+                        m_gameManager->changeScreen(std::make_shared<MenuScreen>());
+                    }
                 } else if (btn.action == "Change Difficulty") {
                     g_settings.difficulty = (g_settings.difficulty + 1) % 3;
                     updateDifficultyText();

@@ -18,6 +18,7 @@ public:
     int energy; // 0 to 100
     int morale; // 0 to 100
     int injuredDays; // 0 if healthy
+    int suspensionMatches = 0; // 0 if not suspended
 
     int shooting; // 1 to 100
     int passing; // 1 to 100
@@ -41,4 +42,5 @@ public:
     
     float totalSeasonRating = 0.0f;
     int matchesPlayedThisSeason = 0;
+    float coachTrust = 50.0f; // 0 to 100
 };

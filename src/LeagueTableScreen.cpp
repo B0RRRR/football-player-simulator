@@ -152,6 +152,10 @@ void LeagueTableScreen::draw(sf::RenderWindow& window) {
         window.draw(logo);
     }
     
+    for (const auto& logo : m_tableLogos) {
+        window.draw(logo);
+    }
+    
     window.draw(m_backButton.rect);
     window.draw(m_backButton.text);
 }

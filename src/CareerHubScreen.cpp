@@ -12,7 +12,10 @@
 #include "AssetManager.h"
 #include "MatchEngine.h"
 #include "MatchStatsScreen.h"
+#include "MatchEngine.h"
+#include "MatchStatsScreen.h"
 #include "EuropeanCupScreen.h"
+#include "SettingsScreen.h"
 
 CareerHubScreen::CareerHubScreen() {
 }
@@ -24,6 +27,21 @@ void CareerHubScreen::init() {
     m_titleText.setCharacterSize(40);
     m_titleText.setFillColor(sf::Color::White);
     m_titleText.setPosition(50.f, 30.f);
+    
+    m_btnSettings.rect.setSize(sf::Vector2f(120.f, 40.f));
+    m_btnSettings.rect.setPosition(1100.f, 20.f);
+    m_btnSettings.baseColor = sf::Color(100, 100, 100);
+    m_btnSettings.rect.setFillColor(m_btnSettings.baseColor);
+    
+    m_btnSettings.text.setFont(font);
+    m_btnSettings.text.setString("Settings");
+    m_btnSettings.text.setCharacterSize(18);
+    m_btnSettings.text.setFillColor(sf::Color::White);
+    sf::FloatRect sr = m_btnSettings.text.getLocalBounds();
+    m_btnSettings.text.setOrigin(sr.left + sr.width/2.0f, sr.top + sr.height/2.0f);
+    m_btnSettings.text.setPosition(m_btnSettings.rect.getPosition().x + m_btnSettings.rect.getSize().x/2.0f,
+                                   m_btnSettings.rect.getPosition().y + m_btnSettings.rect.getSize().y/2.0f);
+    m_btnSettings.action = "Settings";
     
     m_playerStatsText.setFont(font);
     m_playerStatsText.setCharacterSize(24);
@@ -118,9 +136,18 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
         sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
+        if (m_btnSettings.rect.getGlobalBounds().contains(mousePos)) {
+            m_gameManager->changeScreen(std::make_shared<SettingsScreen>());
+            return;
+        }
+        
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (btn.action == "Tournaments" || btn.action == "European Cups") {
+                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
+                } else if (btn.action == "European Cups") {
+                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
+                } else if (btn.action == "European Cups") {
                     m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
                 } else if (btn.action == "Quit to Menu") {
                     m_gameManager->changeScreen(std::make_shared<MenuScreen>());
@@ -163,6 +190,11 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     while (cm->isSummerBreak()) {
                         cm->advanceDay();
                     }
+                } else if (btn.action == "Skip Summer") {
+                    CareerManager* cm = m_gameManager->getCareerManager();
+                    while (cm->isSummerBreak()) {
+                        cm->advanceDay();
+                    }
                 } else if (btn.action == "Upgrades") {
                     m_gameManager->changeScreen(std::make_shared<UpgradeScreen>());
                 } else if (btn.action == "League Table") {
@@ -170,6 +202,7 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                 } else if (btn.action == "Debug: Skip Match") {
                     if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Match || m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
                         Player* p = m_gameManager->getPlayer();
+                        if (p->suspensionMatches > 0) p->suspensionMatches--;
                         Club* opp = nullptr;
                         Club* playerClub = p->currentClub;
                         bool isHomeMatch = true;
@@ -240,6 +273,10 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                             } else if (engine->getState() == MatchState::MinigameTriggered) {
                                 engine->processMinigameResult(rand() % 2 == 0); // 50% win rate for auto-sim
                             }
+                            
+                            while (engine->hasLogs()) {
+                                engine->commitEvent(engine->popRecentLog());
+                            }
                         }
                         m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(engine));
                     }
@@ -249,6 +286,8 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                         p->experience += 50;
                         m_gameManager->getCareerManager()->advanceDay();
                     }
+                } else if (btn.action == "Debug: Skip Season") {
+                    m_gameManager->getCareerManager()->skipSeason();
                 } else if (btn.action == "Debug: Skip Season") {
                     m_gameManager->getCareerManager()->skipSeason();
                 }
@@ -375,4 +414,9 @@ void CareerHubScreen::draw(sf::RenderWindow& window) {
         window.draw(renderRect);
         window.draw(btn.text);
     }
+    
+    sf::RectangleShape settingsRenderRect = m_btnSettings.rect;
+    settingsRenderRect.setFillColor(m_btnSettings.isHovered ? sf::Color(std::min(255, m_btnSettings.baseColor.r + 50), std::min(255, m_btnSettings.baseColor.g + 50), std::min(255, m_btnSettings.baseColor.b + 50)) : m_btnSettings.baseColor);
+    window.draw(settingsRenderRect);
+    window.draw(m_btnSettings.text);
 }
