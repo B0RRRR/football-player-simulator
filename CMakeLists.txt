@@ -10,32 +10,42 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g -fsanitize=address,undefined")
 find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
 
 # Include directories
-include_directories(src)
+include_directories(
+    src
+    src/core
+    src/models
+    src/engine
+    src/screens
+    src/ui
+)
 
 # Add source files here
 set(SOURCES
-    src/main.cpp
-    src/Settings.cpp
-    src/AssetManager.cpp
-    src/GameManager.cpp
-    src/MenuScreen.cpp
-    src/MatchEngine.cpp
-    src/MatchStatsScreen.cpp
-    src/SeasonEndScreen.cpp
-    src/SettingsScreen.cpp
-    src/NewCareerScreen.cpp
-    src/CareerHubScreen.cpp
-    src/LeagueTableScreen.cpp
-    src/TrainingScreen.cpp
-    src/EventScreen.cpp
-    src/TransferScreen.cpp
-    src/EuropeanCupScreen.cpp
-    src/CareerManager.cpp
-    src/Player.cpp
-    src/Match.cpp
-    src/MatchScreen.cpp
-    src/UpgradeScreen.cpp
-    src/Database.cpp
+    src/core/main.cpp
+    src/core/Settings.cpp
+    src/core/AssetManager.cpp
+    src/core/GameManager.cpp
+    
+    src/models/Player.cpp
+    src/models/Database.cpp
+    src/models/CareerManager.cpp
+    src/models/Match.cpp
+    
+    src/engine/MatchEngine.cpp
+    
+    src/screens/MenuScreen.cpp
+    src/screens/MatchStatsScreen.cpp
+    src/screens/SeasonEndScreen.cpp
+    src/screens/SettingsScreen.cpp
+    src/screens/NewCareerScreen.cpp
+    src/screens/CareerHubScreen.cpp
+    src/screens/LeagueTableScreen.cpp
+    src/screens/TrainingScreen.cpp
+    src/screens/EventScreen.cpp
+    src/screens/TransferScreen.cpp
+    src/screens/EuropeanCupScreen.cpp
+    src/screens/MatchScreen.cpp
+    src/screens/UpgradeScreen.cpp
 )
 
 # Create executable
