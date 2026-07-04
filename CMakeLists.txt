@@ -25,6 +25,7 @@ set(SOURCES
     src/core/Settings.cpp
     src/core/AssetManager.cpp
     src/core/GameManager.cpp
+    src/core/SaveManager.cpp
     
     src/models/Player.cpp
     src/models/Database.cpp

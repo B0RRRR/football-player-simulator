@@ -25,8 +25,9 @@ private:
         std::string action;
     };
     std::vector<Button> m_buttons;
-    
     int m_currentView; // 0 = CL, 1 = EL, 2 = Int
+    int m_selectedYear = 0;
+    int m_maxYear = 0;
     
     std::vector<sf::Text> m_bracketTexts;
 };

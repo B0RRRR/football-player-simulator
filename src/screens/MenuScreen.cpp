@@ -6,6 +6,8 @@
 #include "AssetManager.h"
 #include "GameManager.h"
 #include "UITheme.h"
+#include "SaveManager.h"
+#include "CareerHubScreen.h"
 #include <iostream>
 
 MenuScreen::MenuScreen() {
@@ -22,7 +24,13 @@ void MenuScreen::init() {
     m_titleText.setPosition(200.f, 100.f);
     
     // Setup buttons
-    std::vector<std::string> buttonLabels = {"New Career", "Settings", "Exit"};
+    std::vector<std::string> buttonLabels;
+    if (SaveManager::hasSaveGame("savegame.json")) {
+        buttonLabels.push_back("Continue Career");
+    }
+    buttonLabels.push_back("New Career");
+    buttonLabels.push_back("Settings");
+    buttonLabels.push_back("Exit");
     float startY = 250.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
@@ -59,6 +67,12 @@ void MenuScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
                 if (btn.rect.getGlobalBounds().contains(mousePos)) {
                     if (btn.action == "Exit") {
                         window.close();
+                    } else if (btn.action == "Continue Career") {
+                        if (SaveManager::loadGame("savegame.json", m_gameManager->getPlayer(), m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {
+                            m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                        } else {
+                            std::cout << "Failed to load savegame.\n";
+                        }
                     } else if (btn.action == "New Career") {
                         m_gameManager->changeScreen(std::make_shared<NewCareerScreen>());
                     } else if (btn.action == "Settings") {

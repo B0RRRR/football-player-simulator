@@ -135,7 +135,32 @@ Club* Database::getClub(const std::string& leagueName, const std::string& clubNa
             }
         }
     }
+    // Also check national teams if not found in regular leagues
+    if (leagueName.empty() || leagueName == m_nationalTeams.name) {
+        for (auto& club : m_nationalTeams.clubs) {
+            if (club.name == clubName) {
+                return &club;
+            }
+        }
+    }
     return nullptr;
+}
+
+void Database::archiveCurrentSeason(int year) {
+    m_leagueHistory[year] = m_leagues;
+}
+
+void Database::archiveClubTournaments(int year) {
+    m_championsLeagueHistory[year] = m_championsLeague;
+    m_europaLeagueHistory[year] = m_europaLeague;
+}
+
+void Database::archiveInternationalTournaments(int year) {
+    if (year % 2 == 0) {
+        m_euroCupHistory[year] = m_euroCup;
+    } else {
+        m_worldCupHistory[year] = m_worldCup;
+    }
 }
 
 void Database::resetStats() {
@@ -159,31 +184,27 @@ const League* Database::getLeague(const std::string& name) const {
     return nullptr;
 }
 
-void Database::processRelegation() {
-    // Pairs: 0-1, 2-3, 4-5, 6-7, 8-9
+void Database::processRelegation(int year) {
+    // 1. Sort all leagues first
+    for (auto& league : m_leagues) {
+        std::sort(league.clubs.begin(), league.clubs.end(), [](const Club& a, const Club& b) {
+            if (a.points != b.points) return a.points > b.points;
+            int gdA = a.goalsFor - a.goalsAgainst;
+            int gdB = b.goalsFor - b.goalsAgainst;
+            if (gdA != gdB) return gdA > gdB;
+            return a.goalsFor > b.goalsFor;
+        });
+    }
+
+    // 2. Archive the properly sorted season before moving clubs
+    archiveCurrentSeason(year);
+
+    // 3. Move clubs
     for (size_t i = 0; i < m_leagues.size(); i += 2) {
         if (i + 1 >= m_leagues.size()) break;
         
         League& div1 = m_leagues[i];
         League& div2 = m_leagues[i+1];
-        
-        // Sort div1 (descending)
-        std::sort(div1.clubs.begin(), div1.clubs.end(), [](const Club& a, const Club& b) {
-            if (a.points != b.points) return a.points > b.points;
-            int gdA = a.goalsFor - a.goalsAgainst;
-            int gdB = b.goalsFor - b.goalsAgainst;
-            if (gdA != gdB) return gdA > gdB;
-            return a.goalsFor > b.goalsFor;
-        });
-        
-        // Sort div2 (descending)
-        std::sort(div2.clubs.begin(), div2.clubs.end(), [](const Club& a, const Club& b) {
-            if (a.points != b.points) return a.points > b.points;
-            int gdA = a.goalsFor - a.goalsAgainst;
-            int gdB = b.goalsFor - b.goalsAgainst;
-            if (gdA != gdB) return gdA > gdB;
-            return a.goalsFor > b.goalsFor;
-        });
         
         // Get bottom 3 of div1
         std::vector<Club> bottom3(div1.clubs.end() - 3, div1.clubs.end());

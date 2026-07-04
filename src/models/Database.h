@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <map>
 
 struct Club {
     std::string name;
@@ -50,6 +51,7 @@ struct Tournament {
 };
 
 class Database {
+    friend class SaveManager;
 public:
     Database();
     
@@ -59,12 +61,20 @@ public:
     // Reset league table stats for all clubs
     void resetStats();
     
+    // Archive current league tables into history
+    void archiveCurrentSeason(int year);
+    
+    // Archive tournaments into history
+    void archiveClubTournaments(int year);
+    void archiveInternationalTournaments(int year);
+    
     const std::vector<League>& getLeagues() const { return m_leagues; }
+    const std::map<int, std::vector<League>>& getLeagueHistory() const { return m_leagueHistory; }
     const League* getLeague(const std::string& name) const;
     const League* getNationalTeams() const { return &m_nationalTeams; }
     Club* getClub(const std::string& leagueName, const std::string& clubName);
     
-    void processRelegation();
+    void processRelegation(int year);
     
     void initTournaments(const std::vector<Club*>& clClubs, const std::vector<Club*>& elClubs);
     void advanceTournamentRound(Tournament& t);
@@ -75,15 +85,26 @@ public:
     Tournament& getWorldCup() { return m_worldCup; }
     Tournament& getEuroCup() { return m_euroCup; }
     
+    const std::map<int, Tournament>& getChampionsLeagueHistory() const { return m_championsLeagueHistory; }
+    const std::map<int, Tournament>& getEuropaLeagueHistory() const { return m_europaLeagueHistory; }
+    const std::map<int, Tournament>& getWorldCupHistory() const { return m_worldCupHistory; }
+    const std::map<int, Tournament>& getEuroCupHistory() const { return m_euroCupHistory; }
+    
     void initNationalTeams();
     void generateWorldCup();
     void generateEuroCup();
 
 private:
     std::vector<League> m_leagues;
+    std::map<int, std::vector<League>> m_leagueHistory;
     League m_nationalTeams; // Holds all national teams
     Tournament m_championsLeague;
     Tournament m_europaLeague;
     Tournament m_worldCup;
     Tournament m_euroCup;
+    
+    std::map<int, Tournament> m_championsLeagueHistory;
+    std::map<int, Tournament> m_europaLeagueHistory;
+    std::map<int, Tournament> m_worldCupHistory;
+    std::map<int, Tournament> m_euroCupHistory;
 };

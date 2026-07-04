@@ -14,3 +14,8 @@ Makefile
 .idea/
 *.swp
 .DS_Store
+
+# Game data
+savegame.json
+settings.json
+*.json

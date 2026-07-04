@@ -5,7 +5,9 @@
 #include "Settings.h"
 #include "UITheme.h"
 #include "CareerHubScreen.h"
+#include "SaveManager.h"
 #include <memory>
+#include <iostream>
 
 SettingsScreen::SettingsScreen() {
 }
@@ -32,8 +34,8 @@ void SettingsScreen::init() {
     updateSpeedText();
     
     // Setup buttons
-    std::vector<std::string> buttonLabels = {"Change Difficulty", "Change Match Speed", "Back to Menu"};
-    float startY = 350.f;
+    std::vector<std::string> buttonLabels = {"Change Difficulty", "Change Match Speed", "Save Game", "Back to Menu"};
+    float startY = 320.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
@@ -93,6 +95,10 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
                 } else if (btn.action == "Change Match Speed") {
                     g_settings.matchSpeed = (g_settings.matchSpeed + 1) % 4;
                     updateSpeedText();
+                } else if (btn.action == "Save Game") {
+                    if (SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {
+                        std::cout << "Game saved successfully!\n";
+                    }
                 }
             }
         }

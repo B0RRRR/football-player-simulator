@@ -1,6 +1,7 @@
 #include "CareerManager.h"
 #include "GameManager.h"
 #include "Player.h"
+#include "SaveManager.h"
 #include <cstdlib>
 #include <iostream>
 
@@ -271,6 +272,8 @@ void CareerManager::advanceDay() {
         if (t.isFinished || m_summerDay > 30) {
             endSummerBreak();
         }
+        // Auto-save during summer break
+        SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
         return;
     }
     
@@ -306,6 +309,9 @@ void CareerManager::advanceDay() {
         p->weeksPlayed++;
         p->money += p->salary;
     }
+    
+    // Auto-save after every day transition
+    SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
 }
 
 void CareerManager::skipSeason() {
@@ -489,13 +495,7 @@ void CareerManager::endSeason() {
     }
     m_day = 1;
     
-    m_gameManager->getDatabase().processRelegation();
-    
-    if (p && !clubName.empty()) {
-        p->currentClub = m_gameManager->getDatabase().getClub("", clubName);
-    }
-    
-    // Pick European Cups Teams
+    // Pick European Cups Teams BEFORE relegation changes the clubs vectors
     std::vector<Club*> clClubs;
     std::vector<Club*> elClubs;
     std::vector<Club*> fourthPlaces;
@@ -528,10 +528,20 @@ void CareerManager::endSeason() {
         elClubs.push_back(seventhPlaces[0]);
         elClubs.push_back(seventhPlaces[1]);
     }
+    // Archive club tournaments before resetting them
+    db.archiveClubTournaments(m_year);
     
     db.initTournaments(clClubs, elClubs);
     
-    m_gameManager->getDatabase().resetStats();
+    // Now process relegation (this also archives the season)
+    db.processRelegation(m_year);
+    
+    // Re-acquire player's current club pointer since vectors might have reallocated
+    if (p && !clubName.empty()) {
+        p->currentClub = db.getClub("", clubName);
+    }
+    
+    db.resetStats();
     
     startSummerBreak();
 }
@@ -569,6 +579,9 @@ void CareerManager::startSummerBreak() {
 }
 
 void CareerManager::endSummerBreak() {
+    Database& db = m_gameManager->getDatabase();
+    db.archiveInternationalTournaments(m_year);
+    
     m_isSummerBreak = false;
     m_day = 1; // Start of regular season
 }

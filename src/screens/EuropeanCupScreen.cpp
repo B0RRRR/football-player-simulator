@@ -6,10 +6,12 @@
 #include "Player.h"
 #include <sstream>
 
-EuropeanCupScreen::EuropeanCupScreen() : m_currentView(0) {
+EuropeanCupScreen::EuropeanCupScreen() : m_currentView(0), m_selectedYear(0), m_maxYear(0) {
 }
 
 void EuropeanCupScreen::init() {
+    m_maxYear = m_gameManager->getCareerManager()->getYear();
+    m_selectedYear = m_maxYear;
     auto& font = AssetManager::get().getFont("MainFont");
     
     m_titleText.setFont(font);
@@ -48,6 +50,17 @@ void EuropeanCupScreen::init() {
     createBtn("Int. Tournament", 470.f, 140.f, "INT");
     createBtn("Back", 600.f, 520.f, "BACK");
     
+    createBtn("<", 650.f, 25.f, "PREV");
+    createBtn(">", 700.f, 25.f, "NEXT");
+    
+    // adjust sizes of PREV/NEXT
+    for (auto& btn : m_buttons) {
+        if (btn.action == "PREV" || btn.action == "NEXT") {
+            btn.rect.setSize(sf::Vector2f(40.f, 30.f));
+            btn.text.setPosition(btn.rect.getPosition().x + 20.f, btn.rect.getPosition().y + 15.f);
+        }
+    }
+    
     updateBracketVisuals();
 }
 
@@ -55,9 +68,29 @@ void EuropeanCupScreen::updateBracketVisuals() {
     m_bracketTexts.clear();
     auto& font = AssetManager::get().getFont("MainFont");
     
-    Tournament& t = m_currentView == 0 ? m_gameManager->getDatabase().getChampionsLeague() : 
-                    (m_currentView == 1 ? m_gameManager->getDatabase().getEuropaLeague() :
-                    (m_gameManager->getCareerManager()->getYear() % 2 == 0 ? m_gameManager->getDatabase().getEuroCup() : m_gameManager->getDatabase().getWorldCup()));
+    Database& db = m_gameManager->getDatabase();
+    Tournament t;
+    bool isHistory = (m_selectedYear != m_maxYear);
+    
+    if (m_currentView == 0) {
+        if (isHistory && db.getChampionsLeagueHistory().count(m_selectedYear))
+            t = db.getChampionsLeagueHistory().at(m_selectedYear);
+        else t = db.getChampionsLeague();
+    } else if (m_currentView == 1) {
+        if (isHistory && db.getEuropaLeagueHistory().count(m_selectedYear))
+            t = db.getEuropaLeagueHistory().at(m_selectedYear);
+        else t = db.getEuropaLeague();
+    } else {
+        if (m_selectedYear % 2 == 0) {
+            if (isHistory && db.getEuroCupHistory().count(m_selectedYear))
+                t = db.getEuroCupHistory().at(m_selectedYear);
+            else t = db.getEuroCup();
+        } else {
+            if (isHistory && db.getWorldCupHistory().count(m_selectedYear))
+                t = db.getWorldCupHistory().at(m_selectedYear);
+            else t = db.getWorldCup();
+        }
+    }
     
     Player* p = m_gameManager->getPlayer();
     std::string playerStatus = "You are not participating in this tournament.";
@@ -134,23 +167,26 @@ void EuropeanCupScreen::updateBracketVisuals() {
         }
     }
     
-    if (found) {
-        playerStatus = "You are participating in this tournament!";
-    }
-    
     if (t.rounds.empty()) {
         playerStatus = "Tournament has not been generated yet.";
+    } else {
+        if (found && !isHistory) {
+            playerStatus = "You are participating in this tournament.";
+        } else if (isHistory) {
+            playerStatus = "Historical view.";
+        }
+        
+        if (t.isFinished && t.winner) {
+            playerStatus += "\nTournament Winner: " + t.winner->name;
+        }
     }
     
-    if (t.isFinished && t.winner) {
-        playerStatus += "\nTournament Winner: " + t.winner->name;
-    }
-    
-    m_statusText.setString(playerStatus);
+    std::string viewName = m_currentView == 0 ? "Champions League" : (m_currentView == 1 ? "Europa League" : (m_selectedYear % 2 == 0 ? "Euro Cup" : "World Cup"));
+    m_statusText.setString(viewName + " (" + std::to_string(m_selectedYear) + ")\n" + playerStatus);
 }
 
 void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (event.type == sf::Event::MouseButtonPressed) {
+    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
         sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
@@ -165,6 +201,16 @@ void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
                     updateBracketVisuals();
                 } else if (btn.action == "BACK") {
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                } else if (btn.action == "PREV") {
+                    if (m_selectedYear > 2024) { // Assuming 2024 is start year
+                        m_selectedYear--;
+                        updateBracketVisuals();
+                    }
+                } else if (btn.action == "NEXT") {
+                    if (m_selectedYear < m_maxYear) {
+                        m_selectedYear++;
+                        updateBracketVisuals();
+                    }
                 }
             }
         }

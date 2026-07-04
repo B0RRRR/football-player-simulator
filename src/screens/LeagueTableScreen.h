@@ -25,4 +25,8 @@ private:
     };
     
     Button m_backButton;
+    Button m_prevYearBtn;
+    Button m_nextYearBtn;
+    
+    int m_viewedYear = 0;
 };

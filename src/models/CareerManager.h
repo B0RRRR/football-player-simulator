@@ -20,8 +20,10 @@ public:
     void endSeason();
     int getSeasonLength() const;
     int getYear() const { return m_year; }
+    void setYear(int y) { m_year = y; }
 
     int getCurrentDay() const { return m_day; }
+    void setCurrentDay(int d) { m_day = d; }
     CalendarDayType getDayType() const;
     std::string getDayTypeString() const;
     
@@ -41,6 +43,9 @@ public:
     void skipSummer();
     
     bool isSummerBreak() const { return m_isSummerBreak; }
+    void setSummerBreak(bool b) { m_isSummerBreak = b; }
+    int getSummerDay() const { return m_summerDay; }
+    void setSummerDay(int d) { m_summerDay = d; }
     void startSummerBreak();
     void endSummerBreak();
 

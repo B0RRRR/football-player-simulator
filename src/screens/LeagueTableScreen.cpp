@@ -34,6 +34,30 @@ void LeagueTableScreen::init() {
     m_backButton.text.setPosition(m_backButton.rect.getPosition().x + m_backButton.rect.getSize().x/2.0f,
                                   m_backButton.rect.getPosition().y + m_backButton.rect.getSize().y/2.0f);
     m_backButton.action = "Back";
+    
+    m_viewedYear = m_gameManager->getCareerManager()->getYear();
+    
+    // Prev year button
+    m_prevYearBtn.rect.setSize(sf::Vector2f(40.f, 40.f));
+    m_prevYearBtn.rect.setPosition(650.f, 15.f);
+    m_prevYearBtn.rect.setFillColor(UITheme::ButtonNormal);
+    m_prevYearBtn.text.setFont(font);
+    m_prevYearBtn.text.setString("<");
+    m_prevYearBtn.text.setCharacterSize(20);
+    m_prevYearBtn.text.setFillColor(sf::Color::White);
+    m_prevYearBtn.text.setPosition(660.f, 20.f);
+    m_prevYearBtn.action = "Prev";
+    
+    // Next year button
+    m_nextYearBtn.rect.setSize(sf::Vector2f(40.f, 40.f));
+    m_nextYearBtn.rect.setPosition(700.f, 15.f);
+    m_nextYearBtn.rect.setFillColor(UITheme::ButtonNormal);
+    m_nextYearBtn.text.setFont(font);
+    m_nextYearBtn.text.setString(">");
+    m_nextYearBtn.text.setCharacterSize(20);
+    m_nextYearBtn.text.setFillColor(sf::Color::White);
+    m_nextYearBtn.text.setPosition(710.f, 20.f);
+    m_nextYearBtn.action = "Next";
 }
 
 void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -42,6 +66,10 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
         
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
             m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+        } else if (m_prevYearBtn.rect.getGlobalBounds().contains(mousePos)) {
+            m_viewedYear--;
+        } else if (m_nextYearBtn.rect.getGlobalBounds().contains(mousePos)) {
+            m_viewedYear++;
         }
     }
     
@@ -64,18 +92,42 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
     if (!p || !p->currentClub) return;
     
     const League* currentLeague = nullptr;
-    for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-        for (const auto& c : l.clubs) {
-            if (c.name == p->currentClub->name) {
-                currentLeague = &l;
-                break;
+    const std::vector<League>* sourceLeagues = nullptr;
+    
+    int currentYear = m_gameManager->getCareerManager()->getYear();
+    if (m_viewedYear > currentYear) m_viewedYear = currentYear;
+    if (m_viewedYear < 2024) m_viewedYear = 2024; // Assuming game starts at 2024
+    
+    if (m_viewedYear == currentYear) {
+        sourceLeagues = &m_gameManager->getDatabase().getLeagues();
+    } else {
+        auto& history = m_gameManager->getDatabase().getLeagueHistory();
+        if (history.find(m_viewedYear) != history.end()) {
+            sourceLeagues = &history.at(m_viewedYear);
+        }
+    }
+    
+    if (sourceLeagues) {
+        for (const auto& l : *sourceLeagues) {
+            for (const auto& c : l.clubs) {
+                if (c.name == p->currentClub->name) {
+                    currentLeague = &l;
+                    break;
+                }
             }
         }
     }
     
-    if (!currentLeague) return;
+    if (!currentLeague) {
+        // Fallback if player club isn't in history or something
+        if (sourceLeagues && !sourceLeagues->empty()) {
+            currentLeague = &(*sourceLeagues)[0];
+        } else {
+            return;
+        }
+    }
     
-    std::string titleStr = currentLeague->name + " Standings";
+    std::string titleStr = currentLeague->name + " (" + std::to_string(m_viewedYear) + "/" + std::to_string(m_viewedYear + 1) + ")";
     m_titleText.setString(sf::String::fromUtf8(titleStr.begin(), titleStr.end()));
     
     // Sort clubs
@@ -158,4 +210,10 @@ void LeagueTableScreen::draw(sf::RenderWindow& window) {
     
     window.draw(m_backButton.rect);
     window.draw(m_backButton.text);
+    
+    window.draw(m_prevYearBtn.rect);
+    window.draw(m_prevYearBtn.text);
+    
+    window.draw(m_nextYearBtn.rect);
+    window.draw(m_nextYearBtn.text);
 }
