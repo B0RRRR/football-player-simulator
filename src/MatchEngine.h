@@ -45,6 +45,8 @@ public:
     void triggerMinigame();
     void processMinigameResult(bool success, int actionType = 0);
     
+    void setPlayerTeamAttacking(bool att) { m_playerTeamAttacking = att; }
+    
     MatchState getState() const { return m_state; }
     int getMinute() const { return m_minute; }
     const MatchStats& getPlayerTeamStats() const { return m_isHome ? m_homeStats : m_awayStats; }

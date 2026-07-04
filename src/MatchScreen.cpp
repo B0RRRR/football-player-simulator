@@ -49,105 +49,7 @@ void MatchScreen::init() {
                 if (c.name == p->nationality) {
                     playerClub = const_cast<Club*>(&c);
                     break;
-                } else if (m_attackPhase == 40) {
-            // Midfielder Attacking: Wait a bit with the ball
-            m_dots[m_ballCarrierIdx].targetPos = m_dots[m_ballCarrierIdx].shape.getPosition(); // Stand still
-            if (m_stateTimer > 1.0f) {
-                m_attackPhase = 41;
-                m_stateTimer = 0.f;
-                m_engine->triggerMinigame();
-            }
-        } else if (m_attackPhase == 41) {
-            // Minigame resolved, process the pass
-            if (m_engine->hasLogs()) m_pendingEvent = m_engine->popRecentLog();
-            m_engine->commitEvent(m_pendingEvent);
-            m_visibleLogs.push_back(m_pendingEvent);
-            if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
-            
-            bool isSuccess = (m_pendingEvent.text.find("Great pass") != std::string::npos || m_pendingEvent.text.find("GOAL") != std::string::npos);
-            
-            if (isSuccess) {
-                // Pass to forward!
-                m_ballCarrierIdx = -1;
-                m_dots[m_attackFwdIdx].targetPos = m_dots[m_attackFwdIdx].shape.getPosition(); // Stand still
-                m_ballTarget = m_dots[m_attackFwdIdx].shape.getPosition();
-                m_attackPhase = 42;
-                m_stateTimer = 0.f;
-            } else {
-                // Bad pass, intercepted by opponent
-                m_ballCarrierIdx = -1;
-                m_attackPhase = 43; // Fail resolution
-                m_stateTimer = 0.f;
-                int oppDefenderIdx = (m_engine->isHome() ? 11 : 0) + 3;
-                m_dots[oppDefenderIdx].targetPos = m_dots[oppDefenderIdx].shape.getPosition(); // Stand still
-                m_ballTarget = m_dots[oppDefenderIdx].shape.getPosition();
-            }
-        } else if (m_attackPhase == 42) {
-            // Ball traveling to Forward
-            float dist = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y);
-            if (dist < 10.f) {
-                // Forward shoots!
-                m_attackPhase = 2;
-                m_stateTimer = 0.f;
-                m_ballCarrierIdx = -1;
-                m_shotTargetY = 290.f + (rand()%60 - 30.f);
-            }
-        } else if (m_attackPhase == 43) {
-            // Ball intercepted by opponent
-            float dist = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y);
-            if (dist < 10.f) {
-                m_visualState = VisualState::NormalPlay;
-                m_stateTimer = 0.f;
-            }
-        } else if (m_attackPhase == 50) {
-            // Midfielder Defending: Sprint to opponent
-            int myMidIdx = (m_engine->isHome() ? 0 : 11) + 7;
-            m_dots[myMidIdx].targetPos = m_dots[m_ballCarrierIdx].shape.getPosition();
-            m_dots[myMidIdx].speed = 150.f; // Realistic sprint
-            
-            float dist = std::hypot(m_dots[myMidIdx].shape.getPosition().x - m_dots[m_ballCarrierIdx].shape.getPosition().x, 
-                                    m_dots[myMidIdx].shape.getPosition().y - m_dots[m_ballCarrierIdx].shape.getPosition().y);
-            
-            if (dist < 15.f) {
-                m_attackPhase = 51;
-                m_stateTimer = 0.f;
-                m_engine->triggerMinigame();
-            }
-        } else if (m_attackPhase == 51) {
-            // Minigame resolved, process the tackle
-            if (m_engine->hasLogs()) m_pendingEvent = m_engine->popRecentLog();
-            m_engine->commitEvent(m_pendingEvent);
-            m_visibleLogs.push_back(m_pendingEvent);
-            if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
-            
-            bool isSuccess = (m_pendingEvent.text.find("Great tackle") != std::string::npos || m_pendingEvent.text.find("interception") != std::string::npos);
-            int myMidIdx = (m_engine->isHome() ? 0 : 11) + 7;
-            m_dots[myMidIdx].speed = 100.f; // Reset speed
-            
-            if (isSuccess) {
-                m_ballCarrierIdx = myMidIdx;
-                m_attackPhase = 52;
-                m_stateTimer = 0.f;
-            } else {
-                // Failed tackle, opponent passes to forward
-                m_attackPhase = 1; 
-                m_stateTimer = 0.f;
-                m_ballCarrierIdx = -1;
-                m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(700.f, m_shotTargetY) : sf::Vector2f(180.f, m_shotTargetY);
-                int attackerBase = m_pendingEvent.isHome ? 0 : 11;
-                do {
-                    m_attackFwdIdx = attackerBase + 9 + (rand()%2);
-                } while(hasRedCard(m_attackFwdIdx));
-                m_dots[m_attackFwdIdx].targetPos = m_ballTarget;
-                m_dots[m_attackFwdIdx].speed = 100.f;
-            }
-        } else if (m_attackPhase == 52) {
-            // Succcessful tackle wait a bit
-            if (m_stateTimer > 1.0f) {
-                m_visualState = VisualState::NormalPlay;
-                m_stateTimer = 0.f;
-            }
-        }
+                }
             }
         }
     } else if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
@@ -409,24 +311,28 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
                 m_isMinigameResultPending = true;
                 m_minigameActive = false;
             } else if (p->position == PlayerPosition::Midfielder) {
-                int actionType = 0;
-                if (m_attackPhase == 61) actionType = 1;
-                else if (m_attackPhase == 41 && m_attackType == 3) actionType = 2;
-                
-                if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
-                    sf::Vector2f pPos = m_playerSprite.getPosition();
-                    sf::Vector2f ePos = m_enemySprite.getPosition();
-                    float minX = std::min(pPos.x, mousePos.x); float maxX = std::max(pPos.x, mousePos.x);
-                    if (ePos.x > minX - 20.f && ePos.x < maxX + 20.f && std::abs(ePos.y - mousePos.y) < 40.f) {
-                        m_engine->processMinigameResult(false, actionType);
-                    } else { m_engine->processMinigameResult(true, actionType); }
-                } else { m_engine->processMinigameResult(false, actionType); }
-                m_isMinigameResultPending = true;
-                m_minigameActive = false;
+                if (m_pendingEvent.isHome != m_engine->isHome() || m_attackPhase == 51) {
+                    // This is handled by Spacebar, ignore mouse clicks here
+                } else {
+                    int actionType = 0;
+                    if (m_attackPhase == 61) actionType = 1;
+                    else if (m_attackPhase == 41 && m_attackType == 3) actionType = 2;
+                    
+                    if (m_targetSprite.getGlobalBounds().contains(mousePos)) {
+                        sf::Vector2f pPos = m_playerSprite.getPosition();
+                        sf::Vector2f ePos = m_enemySprite.getPosition();
+                        float minX = std::min(pPos.x, mousePos.x); float maxX = std::max(pPos.x, mousePos.x);
+                        if (ePos.x > minX - 20.f && ePos.x < maxX + 20.f && std::abs(ePos.y - mousePos.y) < 40.f) {
+                            m_engine->processMinigameResult(false, actionType);
+                        } else { m_engine->processMinigameResult(true, actionType); }
+                    } else { m_engine->processMinigameResult(false, actionType); }
+                    m_isMinigameResultPending = true;
+                    m_minigameActive = false;
+                }
             }
         }
         else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
-            if (p->position == PlayerPosition::Defender) {
+            if (p->position == PlayerPosition::Defender || (p->position == PlayerPosition::Midfielder && (m_pendingEvent.isHome != m_engine->isHome() || m_attackPhase == 51))) {
                 if (m_enemySprite.getGlobalBounds().intersects(m_targetSprite.getGlobalBounds())) {
                     m_engine->processMinigameResult(true);
                 } else { m_engine->processMinigameResult(false); }
@@ -730,7 +636,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                 
                 m_visualState = VisualState::NormalPlay;
                 m_stateTimer = 0.f;
-                
+                m_isMinigameResultPending = false;
                 m_engine->commitEvent(m_pendingEvent);
                 m_visibleLogs.push_back(m_pendingEvent);
                 if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
@@ -750,12 +656,21 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             float targetY = m_shotTargetY;
             
             if (m_pendingEvent.type == EventType::PendingMinigame) {
-                // Freeze ball mid-air so animation can finish AFTER minigame
-                m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(750.f, targetY) : sf::Vector2f(130.f, targetY);
-                if (m_stateTimer > 0.3f) {
+                Player* p = m_gameManager->getPlayer();
+                bool isUserForward = p && p->position == PlayerPosition::Forward && m_pendingEvent.isHome == m_engine->isHome();
+                
+                if (isUserForward) {
                     m_engine->triggerMinigame();
                     m_stateTimer = 0.f;
                     return; 
+                } else {
+                    // Freeze ball mid-air so animation can finish AFTER minigame
+                    m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(750.f, targetY) : sf::Vector2f(130.f, targetY);
+                    if (m_stateTimer > 0.3f) {
+                        m_engine->triggerMinigame();
+                        m_stateTimer = 0.f;
+                        return; 
+                    }
                 }
             } else {
                 if (isGoal) {
@@ -814,7 +729,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             }
         } else if (m_attackPhase == 41) {
             // Minigame resolved, process the pass
-            if (m_engine->hasLogs()) m_pendingEvent = m_engine->popRecentLog();
+            m_isMinigameResultPending = false;
             m_engine->commitEvent(m_pendingEvent);
             m_visibleLogs.push_back(m_pendingEvent);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
@@ -871,13 +786,17 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                                     m_dots[myMidIdx].shape.getPosition().y - m_dots[m_ballCarrierIdx].shape.getPosition().y);
             
             if (dist < 15.f) {
-                m_attackPhase = 51;
-                m_stateTimer = 0.f;
-                m_engine->triggerMinigame();
+                static sf::Clock s_tackleCooldown;
+                if (s_tackleCooldown.getElapsedTime().asSeconds() > 5.0f) {
+                    m_attackPhase = 51;
+                    m_stateTimer = 0.f;
+                    s_tackleCooldown.restart();
+                    m_engine->triggerMinigame();
+                }
             }
         } else if (m_attackPhase == 51) {
             // Minigame resolved, process the tackle
-            if (m_engine->hasLogs()) m_pendingEvent = m_engine->popRecentLog();
+            m_isMinigameResultPending = false;
             m_engine->commitEvent(m_pendingEvent);
             m_visibleLogs.push_back(m_pendingEvent);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
@@ -918,6 +837,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             }
         } else if (m_attackPhase == 61) {
             // Minigame resolved, process the solo run
+            m_isMinigameResultPending = false;
             bool isSuccess = (m_pendingEvent.text.find("GOAL") != std::string::npos);
             int myMidIdx = (m_engine->isHome() ? 0 : 11) + 7;
             m_dots[myMidIdx].speed = 100.f; // Reset speed
@@ -1111,6 +1031,15 @@ void MatchScreen::update(sf::Time deltaTime) {
                 m_attackWingerIdx = attackerBase + ((rand()%2==0)?5:8);
                 int options[] = {9, 10};
                 m_attackFwdIdx = attackerBase + options[rand() % 2];
+                
+                Player* p = m_gameManager->getPlayer();
+                if (p && p->position == PlayerPosition::Forward && m_pendingEvent.isHome == m_engine->isHome()) {
+                    m_attackFwdIdx = attackerBase + 10;
+                    if (m_pendingEvent.type == EventType::PendingMinigame && m_attackType == 1) {
+                        m_attackType = (rand() % 2 == 0) ? 0 : 2;
+                    }
+                }
+                
                 m_shotTargetY = 290.f + (rand()%60 - 30.f);
             } else {
                 m_engine->commitEvent(m_pendingEvent);
@@ -1171,7 +1100,7 @@ void MatchScreen::initMinigame() {
         m_targetSprite.setPosition(600.f, 280.f); m_targetDir = 1.f;
         float r = 10.f + (p->shooting / 100.f) * 30.f; m_targetSprite.setRadius(r);
     } else if (p->position == PlayerPosition::Midfielder) {
-        if (m_pendingEvent.isHome != m_engine->isHome()) {
+        if (m_pendingEvent.isHome != m_engine->isHome() || m_attackPhase == 51) {
             m_playerSprite.setPosition(600.f, 450.f); m_targetSprite.setPosition(600.f, 400.f);
             m_enemySprite.setPosition(600.f, 250.f); m_ballSprite.setPosition(m_enemySprite.getPosition());
             m_enemySpeed = 80.f + ((100.f - p->tackling) * 2.f) + (oppStrength * 1.5f);
@@ -1205,7 +1134,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         if (m_targetSprite.getPosition().x > 880.f - m_targetSprite.getRadius()*2.f) m_targetDir = -1.f;
         if (m_minigameTimer > 5.0f) { m_engine->processMinigameResult(false, false); m_minigameActive = false; }
     } else if (p->position == PlayerPosition::Midfielder) {
-        if (m_pendingEvent.isHome != m_engine->isHome()) {
+        if (m_pendingEvent.isHome != m_engine->isHome() || m_attackPhase == 51) {
             m_enemySprite.move(0, m_enemySpeed * dt); m_ballSprite.setPosition(m_enemySprite.getPosition());
             if (m_enemySprite.getPosition().y > 500.f) { m_engine->processMinigameResult(false, false); m_minigameActive = false; }
         } else if (m_midfielderSoloRun) {
