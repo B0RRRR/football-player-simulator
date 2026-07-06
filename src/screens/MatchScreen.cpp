@@ -63,7 +63,7 @@ void MatchScreen::init() {
             }
         }
         if (lg) {
-            int n = lg->clubs.size();
+            int n = static_cast<int>(lg->clubs.size());
             int r = p->weeksPlayed % (n - 1);
             int pIndex = -1;
             for (int i = 0; i < n; ++i) {

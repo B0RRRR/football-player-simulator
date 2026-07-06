@@ -8,6 +8,7 @@
 #include "Player.h"
 #include <cstdlib>
 #include <algorithm>
+#include <random>
 #include <iostream>
 
 InterviewScreen::InterviewScreen() {
@@ -62,12 +63,13 @@ void InterviewScreen::generateQuestions() {
                 if (c.name != correct && c.strength > 75) wrong.push_back(c.name);
             }
         }
-        std::random_shuffle(wrong.begin(), wrong.end());
+        auto rng = std::default_random_engine(rand());
+        std::shuffle(wrong.begin(), wrong.end(), rng);
         
         q.options.push_back({correct, true});
         q.options.push_back({wrong[0], false});
         q.options.push_back({wrong[1], false});
-        std::random_shuffle(q.options.begin(), q.options.end());
+        std::shuffle(q.options.begin(), q.options.end(), rng);
         m_questions.push_back(q);
     }
 
@@ -83,12 +85,13 @@ void InterviewScreen::generateQuestions() {
                 if (c.name != correct && c.strength > 65) wrong.push_back(c.name);
             }
         }
-        std::random_shuffle(wrong.begin(), wrong.end());
+        auto rng = std::default_random_engine(rand());
+        std::shuffle(wrong.begin(), wrong.end(), rng);
         
         q.options.push_back({correct, true});
         q.options.push_back({wrong[0], false});
         q.options.push_back({wrong[1], false});
-        std::random_shuffle(q.options.begin(), q.options.end());
+        std::shuffle(q.options.begin(), q.options.end(), rng);
         m_questions.push_back(q);
     }
 
@@ -111,7 +114,8 @@ void InterviewScreen::generateQuestions() {
         q.options.push_back({std::to_string(correct), true});
         q.options.push_back({std::to_string(w1), false});
         q.options.push_back({std::to_string(w2), false});
-        std::random_shuffle(q.options.begin(), q.options.end());
+        auto rng = std::default_random_engine(rand());
+        std::shuffle(q.options.begin(), q.options.end(), rng);
         m_questions.push_back(q);
     }
 
@@ -144,7 +148,8 @@ void InterviewScreen::generateQuestions() {
             q.options.push_back({correct, true});
             q.options.push_back({w1, false});
             q.options.push_back({w2, false});
-            std::random_shuffle(q.options.begin(), q.options.end());
+            auto rng = std::default_random_engine(rand());
+            std::shuffle(q.options.begin(), q.options.end(), rng);
             m_questions.push_back(q);
         }
     }
