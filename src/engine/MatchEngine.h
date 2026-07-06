@@ -69,6 +69,7 @@ public:
     const std::vector<int>& getHomeRedCards() const { return m_homeRedCards; }
     const std::vector<int>& getAwayRedCards() const { return m_awayRedCards; }
     bool isUserSubbedOff() const { return m_userSubbedOff; }
+    std::string getUserStartReason() const { return m_userStartReason; }
 
 private:
     void simulateAIEvent(bool playerTeamAttacking);
@@ -91,6 +92,7 @@ private:
     std::vector<int> m_homeRedCards;
     std::vector<int> m_awayRedCards;
     bool m_userSubbedOff;
+    std::string m_userStartReason;
     
     int m_userInjuryMinute = -1;
     int m_userRedCardMinute = -1;

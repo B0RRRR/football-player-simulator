@@ -118,6 +118,8 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
             {"totalSeasonRating", p->totalSeasonRating},
             {"matchesPlayedThisSeason", p->matchesPlayedThisSeason},
             {"coachTrust", p->coachTrust},
+            {"isTransferListed", p->isTransferListed},
+            {"contractYearsLeft", p->contractYearsLeft},
             {"currentClub", p->currentClub ? p->currentClub->name : ""}
         };
     }
@@ -239,6 +241,8 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
         p->totalSeasonRating = jp.value("totalSeasonRating", 0.0f);
         p->matchesPlayedThisSeason = jp.value("matchesPlayedThisSeason", 0);
         p->coachTrust = jp.value("coachTrust", 50.0f);
+        p->isTransferListed = jp.value("isTransferListed", false);
+        p->contractYearsLeft = jp.value("contractYearsLeft", 3);
         
         // We will resolve currentClub after loading the database,
         // because the database will clear and rebuild its clubs, invalidating pointers.

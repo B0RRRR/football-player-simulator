@@ -42,7 +42,9 @@ set(SOURCES
     src/screens/CareerHubScreen.cpp
     src/screens/LeagueTableScreen.cpp
     src/screens/TrainingScreen.cpp
+    src/screens/MyStatusScreen.cpp
     src/screens/EventScreen.cpp
+    src/screens/InterviewScreen.cpp
     src/screens/TransferScreen.cpp
     src/screens/EuropeanCupScreen.cpp
     src/screens/MatchScreen.cpp

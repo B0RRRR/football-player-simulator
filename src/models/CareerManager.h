@@ -15,8 +15,8 @@ public:
     CareerManager(GameManager* gm);
     
     void resetCareer();
-    void advanceDay();
-    void simulateMatchweek(); // Simulate results for all other clubs
+    void advanceDay(bool simulatePlayerClub = false);
+    void simulateMatchweek(bool simulatePlayerClub = false); // Simulate results for all other clubs
     void endSeason();
     int getSeasonLength() const;
     int getYear() const { return m_year; }
@@ -37,8 +37,8 @@ public:
     Club* getInternationalOpponent() const;
     bool isHomeInternationalMatch() const;
     
-    void simulateEuropeanMatches();
-    void simulateInternationalMatches();
+    void simulateEuropeanMatches(bool simulatePlayerClub = false);
+    void simulateInternationalMatches(bool simulatePlayerClub = false);
     void skipSeason();
     void skipSummer();
     

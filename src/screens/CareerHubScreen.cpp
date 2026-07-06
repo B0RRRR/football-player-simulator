@@ -7,15 +7,16 @@
 #include "TrainingScreen.h"
 #include "EventScreen.h"
 #include "TransferScreen.h"
-#include "SeasonEndScreen.h"
 #include "GameManager.h"
 #include "AssetManager.h"
 #include "MatchEngine.h"
 #include "MatchStatsScreen.h"
 #include "MatchEngine.h"
-#include "MatchStatsScreen.h"
+#include "InterviewScreen.h"
 #include "EuropeanCupScreen.h"
 #include "SettingsScreen.h"
+#include "TransferScreen.h"
+#include "MyStatusScreen.h"
 
 CareerHubScreen::CareerHubScreen() {
 }
@@ -44,7 +45,7 @@ void CareerHubScreen::init() {
     m_btnSettings.action = "Settings";
     
     m_playerStatsText.setFont(font);
-    m_playerStatsText.setCharacterSize(24);
+    m_playerStatsText.setCharacterSize(20);
     m_playerStatsText.setFillColor(sf::Color(200, 200, 200));
     m_playerStatsText.setPosition(50.f, 100.f);
 
@@ -53,13 +54,13 @@ void CareerHubScreen::init() {
     m_calendarText.setFillColor(sf::Color::Yellow);
     m_calendarText.setPosition(400.f, 100.f);
     
-    std::vector<std::string> buttonLabels = {"Advance Day", "Upgrades", "League Table", "Tournaments", "Quit to Menu"};
-    float startY = 350.f;
+    std::vector<std::string> buttonLabels = {"Advance Day", "My Status", "Upgrades", "League Table", "Tournaments", "Quit to Menu"};
+    float startY = 380.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
-        btn.rect.setSize(sf::Vector2f(300.f, 50.f));
-        btn.rect.setPosition(50.f, startY + i * 60.f);
+        btn.rect.setSize(sf::Vector2f(300.f, 45.f));
+        btn.rect.setPosition(50.f, startY + i * 55.f);
         btn.baseColor = UITheme::ButtonNormal;
         
         btn.text.setFont(font);
@@ -151,8 +152,10 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
                 } else if (btn.action == "Quit to Menu") {
                     m_gameManager->changeScreen(std::make_shared<MenuScreen>());
-                } else if (btn.action == "View Offers") {
+                } else if (btn.action == "Transfer Center") {
                     m_gameManager->changeScreen(std::make_shared<TransferScreen>());
+                } else if (btn.action == "My Status") {
+                    m_gameManager->changeScreen(std::make_shared<MyStatusScreen>());
                 } else if (btn.action == "Advance Day" || btn.action == "Recovery") {
                     Player* p = m_gameManager->getPlayer();
                     CareerManager* cm = m_gameManager->getCareerManager();
@@ -161,7 +164,7 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                         // Injured, just rest and advance day
                         p->energy += 20; // extra rest
                         if (p->energy > 100) p->energy = 100;
-                        cm->advanceDay();
+                        cm->advanceDay(true); // Simulate player club match!
                         return; // exit loop
                     }
 
@@ -177,6 +180,8 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                         } else {
                             cm->advanceDay();
                         }
+                    } else if (cm->hasEuropeanMatchToday()) {
+                        m_gameManager->changeScreen(std::make_shared<MatchScreen>());
                     } else if (cm->getDayType() == CalendarDayType::Match) {
                         m_gameManager->changeScreen(std::make_shared<MatchScreen>());
                     } else if (cm->getDayType() == CalendarDayType::Training) {
@@ -308,7 +313,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
     CareerManager* cm = m_gameManager->getCareerManager();
     
     if (p && cm && p->weeksPlayed >= cm->getSeasonLength()) {
-        m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
+        m_gameManager->changeScreen(std::make_shared<InterviewScreen>());
         return;
     }
     
@@ -316,8 +321,15 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         std::string titleStr = p->currentClub->name + " - Hub";
         m_titleText.setString(sf::String::fromUtf8(titleStr.begin(), titleStr.end()));
         
+        std::string posStr = "Unknown";
+        if (p->position == PlayerPosition::Forward) posStr = "Forward";
+        else if (p->position == PlayerPosition::Midfielder) posStr = "Midfielder";
+        else if (p->position == PlayerPosition::Defender) posStr = "Defender";
+        else if (p->position == PlayerPosition::Goalkeeper) posStr = "Goalkeeper";
+        
         std::string stats = "Name: " + p->name + "\n";
         stats += "Nationality: " + p->nationality + "\n";
+        stats += "Position: " + posStr + "\n";
         stats += "Shooting: " + std::to_string(p->shooting) + "\n";
         stats += "Passing: " + std::to_string(p->passing) + "\n";
         stats += "Morale: " + std::to_string(p->morale) + "\n";
@@ -352,9 +364,13 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         }
 
         // Handle Transfer Window
-        if (p->weeksPlayed > 0 && p->weeksPlayed % 15 == 0) {
+        int currentDay = cm->getCurrentDay();
+        // Middle of season (January: day 154-184) or End of season (Summer break)
+        bool isTransferWindow = cm->isSummerBreak() || (currentDay >= 154 && currentDay <= 184);
+        
+        if (isTransferWindow && p->weeksPlayed > 0) {
             bool hasTransferBtn = false;
-            for (auto& b : m_buttons) if (b.action == "View Offers") hasTransferBtn = true;
+            for (auto& b : m_buttons) if (b.action == "Transfer Center") hasTransferBtn = true;
             
             if (!hasTransferBtn) {
                 Button btnOff;
@@ -364,35 +380,80 @@ void CareerHubScreen::update(sf::Time deltaTime) {
                 
                 auto& font = AssetManager::get().getFont("MainFont");
                 btnOff.text.setFont(font);
-                btnOff.text.setString("View Offers");
+                btnOff.text.setString("Transfer Center");
                 btnOff.text.setCharacterSize(18);
                 btnOff.text.setFillColor(sf::Color::Black);
                 sf::FloatRect tr = btnOff.text.getLocalBounds();
                 btnOff.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
                 btnOff.text.setPosition(btnOff.rect.getPosition().x + btnOff.rect.getSize().x/2.0f,
                                         btnOff.rect.getPosition().y + btnOff.rect.getSize().y/2.0f);
-                btnOff.action = "View Offers";
+                btnOff.action = "Transfer Center";
                 m_buttons.push_back(btnOff);
             }
+        } else {
+            // Remove transfer button if window is closed
+            m_buttons.erase(std::remove_if(m_buttons.begin(), m_buttons.end(), [](const Button& b) {
+                return b.action == "Transfer Center";
+            }), m_buttons.end());
         }
     }
     
     if (cm) {
+        int currentDay = cm->getCurrentDay();
+        int currentYear = cm->getYear();
+        int totalDaysOffset = currentDay - 1;
+        
         if (cm->isSummerBreak()) {
-            std::string cal = "SUMMER BREAK\n";
+            totalDaysOffset = 304 + cm->getSummerDay() - 1; 
+        }
+        
+        int daysInMonth[] = {31, 30, 31, 30, 31, 31, 28, 31, 30, 31, 30, 31};
+        std::string monthNames[] = {"August", "September", "October", "November", "December", "January", "February", "March", "April", "May", "June", "July"};
+        
+        int monthIndex = 0;
+        while (totalDaysOffset >= daysInMonth[monthIndex]) {
+            totalDaysOffset -= daysInMonth[monthIndex];
+            monthIndex++;
+            if (monthIndex >= 12) {
+                monthIndex = 11;
+                totalDaysOffset = daysInMonth[11] - 1;
+            }
+        }
+        
+        int displayYear;
+        if (cm->isSummerBreak()) {
+            displayYear = currentYear;
+        } else {
+            if (monthIndex >= 5) {
+                displayYear = currentYear + 1;
+            } else {
+                displayYear = currentYear;
+            }
+        }
+        
+        std::string dateStr = monthNames[monthIndex] + " " + std::to_string(totalDaysOffset + 1) + ", " + std::to_string(displayYear);
+
+        int currentDayVal = cm->getCurrentDay();
+        bool isTransferWindow = cm->isSummerBreak() || (currentDayVal >= 154 && currentDayVal <= 184);
+
+        if (cm->isSummerBreak()) {
+            std::string cal = "SUMMER BREAK - " + dateStr + "\n";
             cal += p->isCalledUp ? "You have been called up\nfor National Team!" : "You are resting\nthis summer.";
+            if (isTransferWindow) {
+                cal += "\nTRANSFER WINDOW OPEN!";
+            }
             m_calendarText.setFillColor(sf::Color(255, 165, 0)); // Orange
             m_calendarText.setString(cal);
         } else {
-            std::string cal = "Day: " + std::to_string(cm->getCurrentDay()) + " (Week " + std::to_string(p ? p->weeksPlayed : 0) + ")\n";
+            std::string cal = dateStr + " (Week " + std::to_string(p ? p->weeksPlayed : 0) + ")\n";
             cal += "Schedule: " + cm->getDayTypeString() + "\n";
-            if (p && p->weeksPlayed > 0 && p->weeksPlayed % 15 == 0) {
+            if (p && isTransferWindow && p->weeksPlayed > 0) {
                 cal += "\nTRANSFER WINDOW OPEN!";
             }
             if (p && p->injuredDays > 0) {
                 cal += "\nINJURED: " + std::to_string(p->injuredDays) + " days left";
                 m_calendarText.setFillColor(sf::Color::Red);
-            } else if (p && p->weeksPlayed > 0 && p->weeksPlayed % 15 == 0) {
+            } else if (p && isTransferWindow && p->weeksPlayed > 0) {
                 m_calendarText.setFillColor(sf::Color::Yellow);
             } else {
                 m_calendarText.setFillColor(sf::Color::Yellow);

@@ -56,8 +56,6 @@ void LeagueTableScreen::init() {
     m_nextYearBtn.text.setString(">");
     m_nextYearBtn.text.setCharacterSize(20);
     m_nextYearBtn.text.setFillColor(sf::Color::White);
-    m_nextYearBtn.text.setPosition(710.f, 20.f);
-    m_nextYearBtn.action = "Next";
 }
 
 void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -70,6 +68,13 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
             m_viewedYear--;
         } else if (m_nextYearBtn.rect.getGlobalBounds().contains(mousePos)) {
             m_viewedYear++;
+        }
+        
+        for (const auto& btn : m_leagueButtons) {
+            if (btn.rect.getGlobalBounds().contains(mousePos)) {
+                m_viewedLeagueName = btn.action;
+                break;
+            }
         }
     }
     
@@ -107,23 +112,62 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
         }
     }
     
-    if (sourceLeagues) {
-        for (const auto& l : *sourceLeagues) {
-            for (const auto& c : l.clubs) {
-                if (c.name == p->currentClub->name) {
-                    currentLeague = &l;
-                    break;
+    if (sourceLeagues && !sourceLeagues->empty()) {
+        if (m_viewedLeagueName.empty()) {
+            // Find player's league
+            for (const auto& l : *sourceLeagues) {
+                for (const auto& c : l.clubs) {
+                    if (c.name == p->currentClub->name) {
+                        m_viewedLeagueName = l.name;
+                        break;
+                    }
                 }
+                if (!m_viewedLeagueName.empty()) break;
+            }
+            if (m_viewedLeagueName.empty()) m_viewedLeagueName = (*sourceLeagues)[0].name;
+        }
+        
+        // Find the league by name
+        for (const auto& l : *sourceLeagues) {
+            if (l.name == m_viewedLeagueName) {
+                currentLeague = &l;
+                break;
             }
         }
+        
+        // Fallback
+        if (!currentLeague) currentLeague = &(*sourceLeagues)[0];
+        m_viewedLeagueName = currentLeague->name;
+    } else {
+        return;
     }
     
-    if (!currentLeague) {
-        // Fallback if player club isn't in history or something
-        if (sourceLeagues && !sourceLeagues->empty()) {
-            currentLeague = &(*sourceLeagues)[0];
-        } else {
-            return;
+    // Create league selector buttons
+    m_leagueButtons.clear();
+    if (sourceLeagues) {
+        float btnX = 750.f;
+        float btnY = 100.f;
+        for (const auto& l : *sourceLeagues) {
+            Button btn;
+            btn.text.setFont(font);
+            btn.text.setString(l.name);
+            btn.text.setCharacterSize(14);
+            sf::FloatRect textRect = btn.text.getLocalBounds();
+            
+            btn.rect.setSize(sf::Vector2f(textRect.width + 20.f, 25.f));
+            btn.rect.setPosition(btnX, btnY);
+            if (l.name == m_viewedLeagueName) {
+                btn.rect.setFillColor(sf::Color(100, 100, 200)); // Highlight
+            } else {
+                btn.rect.setFillColor(UITheme::ButtonNormal);
+            }
+            
+            btn.text.setPosition(btnX + 10.f, btnY + 4.f);
+            btn.text.setFillColor(sf::Color::White);
+            btn.action = l.name;
+            
+            m_leagueButtons.push_back(btn);
+            btnY += 35.f; // Move down for the next button
         }
     }
     
@@ -162,7 +206,7 @@ void LeagueTableScreen::update(sf::Time deltaTime) {
     addColumn("GA", 600.f, 80.f, headC);
     addColumn("GD", 650.f, 80.f, headC);
     
-    float startY = 100.f;
+    float startY = 110.f;
     float rowHeight = 20.f;
     for (size_t i = 0; i < sortedClubs.size(); ++i) {
         const auto& c = sortedClubs[i];
@@ -216,4 +260,9 @@ void LeagueTableScreen::draw(sf::RenderWindow& window) {
     
     window.draw(m_nextYearBtn.rect);
     window.draw(m_nextYearBtn.text);
+    
+    for (const auto& btn : m_leagueButtons) {
+        window.draw(btn.rect);
+        window.draw(btn.text);
+    }
 }

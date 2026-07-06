@@ -112,7 +112,12 @@ void MatchScreen::init() {
     
     m_statusText.setFont(font); m_statusText.setCharacterSize(16); m_statusText.setFillColor(sf::Color(100, 255, 100));
     m_statusText.setPosition(30.f, 470.f);
-    m_statusText.setString("Status: On the pitch (Starter)");
+    if (m_engine->isUserSubbedOff()) {
+        m_statusText.setString(m_engine->getUserStartReason());
+        m_statusText.setFillColor(sf::Color(255, 100, 100));
+    } else {
+        m_statusText.setString("Status: On the pitch (Starter)");
+    }
     
     m_statsTitle.setFont(font); m_statsTitle.setCharacterSize(20); m_statsTitle.setFillColor(UITheme::Highlight);
     m_statsTitle.setString("LIVE STATS"); m_statsTitle.setPosition(1000.f, 150.f);
@@ -398,7 +403,13 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         if (m_ballCarrierIdx != -1) {
             bool carrierIsOpponent = (m_ballCarrierIdx < 11 && !m_engine->isHome()) || (m_ballCarrierIdx >= 11 && m_engine->isHome());
             if (carrierIsOpponent && !m_minigameActive && m_visualState != VisualState::WaitingForMinigame) {
-                int userPosIdx = (int)m_gameManager->getPlayer()->position - 1;
+                int userPosIdx = 0;
+                PlayerPosition pos = m_gameManager->getPlayer()->position;
+                if (pos == PlayerPosition::Defender) userPosIdx = 3;
+                else if (pos == PlayerPosition::Midfielder) userPosIdx = 7;
+                else if (pos == PlayerPosition::Forward) userPosIdx = 10;
+                else if (pos == PlayerPosition::Goalkeeper) userPosIdx = 0;
+                
                 int userIdx = m_engine->isHome() ? userPosIdx : 11 + userPosIdx;
                 float distToUser = std::hypot(m_visualBall.getPosition().x - m_dots[userIdx].shape.getPosition().x, m_visualBall.getPosition().y - m_dots[userIdx].shape.getPosition().y);
                 if (distToUser < 30.f) {
@@ -722,8 +733,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         } else if (m_attackPhase == 40) {
             // Midfielder Attacking: Wait a bit with the ball
             m_dots[m_ballCarrierIdx].targetPos = m_dots[m_ballCarrierIdx].shape.getPosition(); // Stand still
-            if (m_stateTimer > 1.0f) {
-                m_attackPhase = 41;
+            if (m_stateTimer > 1.0f && !m_minigameActive) {
                 m_stateTimer = 0.f;
                 m_engine->triggerMinigame();
             }
@@ -734,7 +744,9 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             m_visibleLogs.push_back(m_pendingEvent);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
             
-            bool isSuccess = (m_pendingEvent.text.find("Great pass") != std::string::npos || m_pendingEvent.text.find("GOAL") != std::string::npos);
+            bool isSuccess = (m_pendingEvent.text.find("Great pass") != std::string::npos || 
+                              m_pendingEvent.text.find("GOAL") != std::string::npos ||
+                              m_pendingEvent.text.find("Good pass") != std::string::npos);
             
             if (isSuccess) {
                 // Pass to forward!
@@ -785,10 +797,9 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             float dist = std::hypot(m_dots[myMidIdx].shape.getPosition().x - m_dots[m_ballCarrierIdx].shape.getPosition().x, 
                                     m_dots[myMidIdx].shape.getPosition().y - m_dots[m_ballCarrierIdx].shape.getPosition().y);
             
-            if (dist < 15.f) {
+            if (dist < 15.f && !m_minigameActive) {
                 static sf::Clock s_tackleCooldown;
                 if (s_tackleCooldown.getElapsedTime().asSeconds() > 5.0f) {
-                    m_attackPhase = 51;
                     m_stateTimer = 0.f;
                     s_tackleCooldown.restart();
                     m_engine->triggerMinigame();
@@ -830,8 +841,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             }
         } else if (m_attackPhase == 60) {
             // Midfielder Solo Run
-            if (m_stateTimer > 1.5f) {
-                m_attackPhase = 61;
+            if (m_stateTimer > 1.5f && !m_minigameActive) {
                 m_stateTimer = 0.f;
                 m_engine->triggerMinigame();
             }
@@ -919,7 +929,14 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         float currentSpeed = d.speed;
         if (m_visualState == VisualState::Attacking) currentSpeed = 150.f; // Sprinting during attack
         
-        if (len > 0) d.shape.move((dir.x / len) * currentSpeed * dt, (dir.y / len) * currentSpeed * dt);
+        if (len > 0) {
+            float moveDist = currentSpeed * dt;
+            if (moveDist >= len) {
+                d.shape.setPosition(d.targetPos);
+            } else {
+                d.shape.move((dir.x / len) * moveDist, (dir.y / len) * moveDist);
+            }
+        }
     }
     
     // Move ball globally
@@ -945,6 +962,11 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
 void MatchScreen::update(sf::Time deltaTime) {
     if (!m_engine) return;
     
+    if (m_engine->isUserSubbedOff()) {
+        m_statusText.setString(m_engine->getUserStartReason());
+        m_statusText.setFillColor(sf::Color(255, 100, 100));
+    }
+
     if (m_engine->getState() == MatchState::Finished) {
         if (!m_engine->hasLogs() && m_visualState == VisualState::NormalPlay) {
             m_scriptTimer += deltaTime.asSeconds();
@@ -1019,7 +1041,12 @@ void MatchScreen::update(sf::Time deltaTime) {
                 }
                 
                 m_visualState = VisualState::Attacking;
-                m_attackPhase = 3;
+                
+                if (m_attackPhase == 40) m_attackPhase = 41;
+                else if (m_attackPhase == 50) m_attackPhase = 51;
+                else if (m_attackPhase == 60) m_attackPhase = 61;
+                else m_attackPhase = 3;
+                
                 m_stateTimer = 0.f;
             } 
             else if (m_pendingEvent.type == EventType::Goal || m_pendingEvent.type == EventType::Chance || m_pendingEvent.type == EventType::PendingMinigame) {

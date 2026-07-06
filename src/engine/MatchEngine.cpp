@@ -21,8 +21,30 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
     m_momentumHistory.push_back(0.0f);
     
     m_userSubbedOff = false;
+    m_userStartReason = "";
     
-    bool userIsPlaying = (m_player && m_player->injuredDays == 0 && m_player->suspensionMatches == 0 && m_player->coachTrust >= 30.0f);
+    bool userIsPlaying = true;
+    if (m_player) {
+        int clubStr = m_playerClub->strength;
+        int playerStr = (m_player->shooting + m_player->passing + m_player->tackling + m_player->goalkeeping) / 4;
+        playerStr += (m_player->morale - 50) / 5; // Morale modifier
+
+        if (m_player->injuredDays > 0) {
+            userIsPlaying = false; m_userStartReason = "Status: INJURED";
+        } else if (m_player->suspensionMatches > 0) {
+            userIsPlaying = false; m_userStartReason = "Status: SUSPENDED";
+        } else if (m_player->coachTrust < 30.0f) {
+            userIsPlaying = false; m_userStartReason = "Status: BENCHED (Low Trust)";
+        } else if (m_player->energy < 50.0f) {
+            userIsPlaying = false; m_userStartReason = "Status: LEFT OUT (Too Tired)";
+        } else if (playerStr < clubStr - 15) {
+            userIsPlaying = false; m_userStartReason = "Status: BENCHED (Stats too low)";
+        }
+    } else {
+        userIsPlaying = false;
+    }
+    
+    m_userSubbedOff = !userIsPlaying;
     
     if (userIsPlaying) {
         if (rand() % 100 < 8) m_userInjuryMinute = 10 + rand() % 75;
@@ -88,12 +110,14 @@ void MatchEngine::updateMinute() {
     if (m_minute == m_userInjuryMinute && !m_userSubbedOff) {
         addLog("INJURY! [USER]", EventType::Normal, m_isHome);
         m_userSubbedOff = true;
+        m_userStartReason = "Status: INJURED IN MATCH";
         m_player->injuredDays = 14 + rand() % 21; // 2 to 5 weeks
     }
     
     if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
         addLog("RED CARD! [USER]", EventType::Card, m_isHome);
         m_userSubbedOff = true;
+        m_userStartReason = "Status: SENT OFF (Red Card)";
         m_player->suspensionMatches = 2; // user suspended
         if (m_isHome) { m_homeStats.redCards++; m_homeRedCards.push_back(-1); } // -1 indicates user
         else { m_awayStats.redCards++; m_awayRedCards.push_back(-1); }
@@ -113,11 +137,11 @@ void MatchEngine::updateMinute() {
     int oStrength = m_opponentClub->strength - m_awayStats.redCards * 15;
     if (!m_isHome) oStrength = m_opponentClub->strength - m_homeStats.redCards * 15;
     
-    int playerTeamChance = 4 + (pStrength - oStrength) / 10;
-    int oppTeamChance = 4 + (oStrength - pStrength) / 10;
+    int playerTeamChance = 12 + (pStrength - oStrength) / 6;
+    int oppTeamChance = 12 + (oStrength - pStrength) / 6;
     
-    if (playerTeamChance < 1) playerTeamChance = 1;
-    if (oppTeamChance < 1) oppTeamChance = 1;
+    if (playerTeamChance < 2) playerTeamChance = 2;
+    if (oppTeamChance < 2) oppTeamChance = 2;
     
     float baseMomentum = (m_isHome ? (pStrength - oStrength) : (oStrength - pStrength)); 
     float currentMomentum = baseMomentum + ((rand() % 40) - 20);
@@ -130,7 +154,7 @@ void MatchEngine::updateMinute() {
         if (m_player->position == PlayerPosition::Forward && (rand() % 100 < 40)) triggerMg = true;
         if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 30)) triggerMg = true;
         
-        if (triggerMg) {
+        if (triggerMg && !m_userSubbedOff) {
             addLog("Minigame triggering for player", EventType::PendingMinigame, m_isHome);
         } else {
             simulateAIEvent(true);
@@ -144,7 +168,7 @@ void MatchEngine::updateMinute() {
         if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) triggerMg = true;
         if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) triggerMg = true;
         
-        if (triggerMg) {
+        if (triggerMg && !m_userSubbedOff) {
             addLog("Minigame triggering against player", EventType::PendingMinigame, !m_isHome);
         } else {
             simulateAIEvent(false);

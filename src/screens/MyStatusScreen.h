@@ -4,9 +4,9 @@
 #include <vector>
 #include <string>
 
-class LeagueTableScreen : public Screen {
+class MyStatusScreen : public Screen {
 public:
-    LeagueTableScreen();
+    MyStatusScreen();
     
     void init() override;
     void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
@@ -15,21 +15,17 @@ public:
 
 private:
     sf::Text m_titleText;
-    std::vector<sf::Text> m_tableRows;
-    std::vector<sf::Sprite> m_tableLogos;
-
+    sf::Text m_infoText;
+    sf::Text m_coachResponseText;
+    
     struct Button {
         sf::RectangleShape rect;
         sf::Text text;
         std::string action;
+        sf::Color baseColor;
     };
     
-    Button m_backButton;
-    Button m_prevYearBtn;
-    Button m_nextYearBtn;
+    std::vector<Button> m_buttons;
     
-    std::vector<Button> m_leagueButtons;
-    
-    int m_viewedYear = 0;
-    std::string m_viewedLeagueName = "";
+    float m_messageTimer = 0.0f;
 };

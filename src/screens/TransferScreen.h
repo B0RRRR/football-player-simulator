@@ -18,6 +18,7 @@ public:
 private:
     sf::Text m_titleText;
     sf::Text m_infoText;
+    sf::Text m_messageText;
 
     struct Offer {
         Club* club;
@@ -29,10 +30,30 @@ private:
         sf::Text text;
         std::string action;
         Offer offer;
+        Club* targetClub = nullptr;
+        sf::Color baseColor;
+        bool isHovered = false;
     };
 
-    std::vector<Button> m_buttons;
+    std::vector<Button> m_navButtons;
+    std::vector<Button> m_contentButtons;
     std::vector<Offer> m_offers;
 
-    void generateOffers();
+    enum class Tab {
+        Inbox,
+        Search
+    };
+    
+    Tab m_currentTab = Tab::Inbox;
+    
+    int m_searchLeagueIdx = 0;
+    int m_searchPage = 0;
+    
+    float m_messageTimer = 0.0f;
+
+    void refreshTab();
+    void buildInboxTab();
+    void buildSearchTab();
+    void generateOffersIfNeeded();
+    void attemptTransfer(Club* targetClub);
 };

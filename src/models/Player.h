@@ -43,4 +43,7 @@ public:
     float totalSeasonRating = 0.0f;
     int matchesPlayedThisSeason = 0;
     float coachTrust = 50.0f; // 0 to 100
+    
+    bool isTransferListed = false;
+    int contractYearsLeft = 3;
 };

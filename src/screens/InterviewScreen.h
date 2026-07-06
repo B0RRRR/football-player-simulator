@@ -4,9 +4,9 @@
 #include <vector>
 #include <string>
 
-class EventScreen : public Screen {
+class InterviewScreen : public Screen {
 public:
-    EventScreen();
+    InterviewScreen();
     
     void init() override;
     void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
@@ -21,14 +21,10 @@ private:
 
     struct EventOption {
         std::string text;
-        int xpChange = 0;
-        int moraleChange = 0;
-        int energyChange = 0;
-        float trustChange = 0.0f;
-        int moneyChange = 0;
+        bool isCorrect = false;
     };
 
-    struct EventQuestion {
+    struct Question {
         std::string desc;
         std::vector<EventOption> options;
     };
@@ -40,22 +36,17 @@ private:
     };
 
     std::vector<Button> m_buttons;
-    std::vector<EventQuestion> m_currentQuestions;
+    std::vector<Question> m_questions;
     int m_questionIndex = 0;
     
     float m_timeRemaining = 0.0f;
-    float m_maxTime = 0.0f;
+    float m_maxTime = 10.0f;
 
-    // Accumulated rewards
-    int m_accXp = 0;
-    int m_accMorale = 0;
-    int m_accEnergy = 0;
-    float m_accTrust = 0.0f;
-    int m_accMoney = 0;
-
+    int m_correctAnswers = 0;
     bool m_isFinished = false;
 
+    void generateQuestions();
     void startNextQuestion();
     void applyOption(const EventOption& opt);
-    void finishEvent();
+    void finishInterview();
 };
