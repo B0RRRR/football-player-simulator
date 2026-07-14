@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <algorithm>
+#include <random>
 
 void CareerManager::distributeGoalsToRoster(Club* club, int goals) {
     if (!club || club->roster.empty() || goals == 0) return;
@@ -37,11 +38,13 @@ void CareerManager::distributeGoalsToRoster(Club* club, int goals) {
 void CareerManager::updateAITeamMatchStats(Club* club) {
     if (!club || club->roster.empty()) return;
     
-    // Pick 11 random players to represent the starting XI
+    // Pick 11 random players to represent the starting XI.
+    // std::random_shuffle was removed in C++17; MSVC rejects it outright.
     std::vector<AIPlayer*> squad = club->roster;
-    std::random_shuffle(squad.begin(), squad.end()); // Basic shuffle
-    
-    for (int i = 0; i < 11 && i < squad.size(); ++i) {
+    static std::mt19937 rng{std::random_device{}()};
+    std::shuffle(squad.begin(), squad.end(), rng);
+
+    for (int i = 0; i < 11 && i < (int)squad.size(); ++i) {
         AIPlayer* p = squad[i];
         p->matchesPlayed++;
         

@@ -4,7 +4,15 @@ project(FootballSim VERSION 1.0)
 # Specify C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g -fsanitize=address,undefined")
+
+# Sanitizers: local debugging only. These are GCC/Clang flags - MSVC rejects them
+# ("unknown option '-fsanitize=address,undefined'") and the CI Release build has no
+# business carrying ASan anyway. Enable with: cmake -B build -DENABLE_SANITIZERS=ON
+option(ENABLE_SANITIZERS "Build with address/UB sanitizers (GCC/Clang only)" OFF)
+if(ENABLE_SANITIZERS AND NOT MSVC)
+    add_compile_options(-O0 -g -fsanitize=address,undefined)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
 # Find SFML (Graphics, Window, System, Audio)
 find_package(SFML 2.5 COMPONENTS graphics window system audio REQUIRED)
