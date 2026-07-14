@@ -120,7 +120,8 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
             {"coachTrust", p->coachTrust},
             {"isTransferListed", p->isTransferListed},
             {"contractYearsLeft", p->contractYearsLeft},
-            {"currentClub", p->currentClub ? p->currentClub->name : ""}
+            {"currentClub", p->currentClub ? p->currentClub->name : ""},
+            {"achievements", p->achievements}
         };
     }
     
@@ -152,6 +153,25 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
                 });
             }
             j["database"]["leagues"].push_back(jLeague);
+        }
+        
+        j["database"]["players"] = json::array();
+        for (const auto& player : db->m_players) {
+            j["database"]["players"].push_back({
+                {"name", player->name},
+                {"nationality", player->nationality},
+                {"position", static_cast<int>(player->position)},
+                {"overall", player->overall},
+                {"age", player->age},
+                {"currentClub", player->currentClub ? player->currentClub->name : ""},
+                {"goals", player->goals},
+                {"assists", player->assists},
+                {"matchesPlayed", player->matchesPlayed},
+                {"avgRating", player->avgRating},
+                {"careerGoals", player->careerGoals},
+                {"careerAssists", player->careerAssists},
+                {"careerMatches", player->careerMatches}
+            });
         }
         
         j["database"]["history"] = json::object();
@@ -244,6 +264,13 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
         p->isTransferListed = jp.value("isTransferListed", false);
         p->contractYearsLeft = jp.value("contractYearsLeft", 3);
         
+        p->achievements.clear();
+        if (jp.contains("achievements") && jp["achievements"].is_array()) {
+            for (auto& ach : jp["achievements"]) {
+                p->achievements.push_back(ach.get<std::string>());
+            }
+        }
+        
         // We will resolve currentClub after loading the database,
         // because the database will clear and rebuild its clubs, invalidating pointers.
     }
@@ -282,6 +309,50 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
                 }
                 db->m_leagues.push_back(newL);
             }
+        }
+        
+        if (jd.contains("players")) {
+            db->m_players.clear();
+            // Clear rosters
+            for (auto& l : db->m_leagues) {
+                for (auto& c : l.clubs) {
+                    c.roster.clear();
+                }
+            }
+            if (db->m_nationalTeams.clubs.size() > 0) {
+                for (auto& c : db->m_nationalTeams.clubs) {
+                    c.roster.clear();
+                }
+            }
+            
+            for (const auto& jp : jd["players"]) {
+                auto player = std::make_unique<AIPlayer>();
+                player->name = jp.value("name", "");
+                player->nationality = jp.value("nationality", "");
+                player->position = static_cast<PlayerPosition>(jp.value("position", 0));
+                player->overall = jp.value("overall", 50);
+                player->age = jp.value("age", 18);
+                player->goals = jp.value("goals", 0);
+                player->assists = jp.value("assists", 0);
+                player->matchesPlayed = jp.value("matchesPlayed", 0);
+                player->avgRating = jp.value("avgRating", 0.0f);
+                player->careerGoals = jp.value("careerGoals", 0);
+                player->careerAssists = jp.value("careerAssists", 0);
+                player->careerMatches = jp.value("careerMatches", 0);
+                
+                std::string clubName = jp.value("currentClub", "");
+                if (!clubName.empty()) {
+                    player->currentClub = db->getClub("", clubName);
+                    if (player->currentClub) {
+                        player->currentClub->roster.push_back(player.get());
+                    }
+                }
+                
+                db->m_players.push_back(std::move(player));
+            }
+        } else {
+            // Backward compatibility for old saves without players
+            db->generatePlayers();
         }
         
         if (jd.contains("history")) {

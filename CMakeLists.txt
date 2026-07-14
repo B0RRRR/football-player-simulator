@@ -29,11 +29,14 @@ set(SOURCES
     
     src/models/Player.cpp
     src/models/Database.cpp
+    src/models/NameGenerator.cpp
     src/models/CareerManager.cpp
     src/models/Match.cpp
     
     src/engine/MatchEngine.cpp
-    
+
+    src/ui/TimingBar.cpp
+
     src/screens/MenuScreen.cpp
     src/screens/MatchStatsScreen.cpp
     src/screens/SeasonEndScreen.cpp
@@ -45,10 +48,13 @@ set(SOURCES
     src/screens/MyStatusScreen.cpp
     src/screens/EventScreen.cpp
     src/screens/InterviewScreen.cpp
+    src/screens/SquadScreen.cpp
     src/screens/TransferScreen.cpp
     src/screens/EuropeanCupScreen.cpp
     src/screens/MatchScreen.cpp
+    src/screens/MatchScreenEpisodes.cpp
     src/screens/UpgradeScreen.cpp
+    src/screens/AwardsScreen.cpp
 )
 
 # Create executable

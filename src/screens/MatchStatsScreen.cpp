@@ -23,14 +23,27 @@ void MatchStatsScreen::init() {
     const MatchStats& away = m_engine->isHome() ? m_engine->getOpponentTeamStats() : m_engine->getPlayerTeamStats();
     
     std::string hName = m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
-    std::string aName = m_engine->isHome() ? m_engine->getOpponentClub()->name : m_engine->getPlayerClub()->name;
+    std::string aName = !m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
+    
+    // Distribute AI goals
+    int userGoals = m_engine->getUserGoalsScored();
+    int homeAIGoals = home.goals - (m_engine->isHome() ? userGoals : 0);
+    int awayAIGoals = away.goals - (!m_engine->isHome() ? userGoals : 0);
+    
+    Club* hc = m_engine->isHome() ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
+    Club* ac = m_engine->isHome() ? m_engine->getOpponentClub() : m_engine->getPlayerClub();
+    
+    if (homeAIGoals > 0) m_gameManager->getCareerManager()->distributeGoalsToRoster(hc, homeAIGoals);
+    if (awayAIGoals > 0) m_gameManager->getCareerManager()->distributeGoalsToRoster(ac, awayAIGoals);
+    
+    m_gameManager->getCareerManager()->updateAITeamMatchStats(hc);
+    m_gameManager->getCareerManager()->updateAITeamMatchStats(ac);
     
     std::stringstream ss;
     ss << std::left << std::setw(20) << hName << " vs " << aName << "\n\n";
     ss << std::left << std::setw(20) << std::to_string(home.goals) << " Goals " << std::to_string(away.goals) << "\n";
     ss << std::left << std::setw(20) << std::to_string(home.shots) << " Shots " << std::to_string(away.shots) << "\n";
     ss << std::left << std::setw(20) << std::to_string(home.yellowCards) << " Yellow Cards " << std::to_string(away.yellowCards) << "\n";
-    ss << std::left << std::setw(20) << std::to_string(home.redCards) << " Red Cards " << std::to_string(away.redCards) << "\n";
     ss << std::left << std::setw(20) << std::to_string(home.redCards) << " Red Cards " << std::to_string(away.redCards) << "\n";
     
     m_statsText.setFont(font);
@@ -87,9 +100,7 @@ void MatchStatsScreen::init() {
                           m_btnContinue.getPosition().y + m_btnContinue.getSize().y/2.0f);
                           
     // Update league points for both clubs
-    Club* hc = m_engine->isHome() ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
-    Club* ac = m_engine->isHome() ? m_engine->getOpponentClub() : m_engine->getPlayerClub();
-    
+    // Update league/cup data
     if (m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
         auto updateTournament = [&](Tournament& t) {
             if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;

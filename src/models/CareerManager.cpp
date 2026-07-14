@@ -4,6 +4,56 @@
 #include "SaveManager.h"
 #include <cstdlib>
 #include <iostream>
+#include <algorithm>
+
+void CareerManager::distributeGoalsToRoster(Club* club, int goals) {
+    if (!club || club->roster.empty() || goals == 0) return;
+    
+    for (int i = 0; i < goals; ++i) {
+        // Find a random player to score, weighted towards FWD and MID
+        std::vector<AIPlayer*> candidates;
+        for (auto p : club->roster) {
+            if (p->position == PlayerPosition::Forward) {
+                for (int w=0; w<5; ++w) candidates.push_back(p);
+            } else if (p->position == PlayerPosition::Midfielder) {
+                for (int w=0; w<3; ++w) candidates.push_back(p);
+            } else if (p->position == PlayerPosition::Defender) {
+                candidates.push_back(p);
+            }
+        }
+        if (!candidates.empty()) {
+            AIPlayer* scorer = candidates[rand() % candidates.size()];
+            scorer->goals++;
+            
+            // 70% chance for an assist
+            if (rand() % 100 < 70) {
+                AIPlayer* assister = candidates[rand() % candidates.size()];
+                if (assister != scorer) assister->assists++;
+            }
+        }
+    }
+}
+
+void CareerManager::updateAITeamMatchStats(Club* club) {
+    if (!club || club->roster.empty()) return;
+    
+    // Pick 11 random players to represent the starting XI
+    std::vector<AIPlayer*> squad = club->roster;
+    std::random_shuffle(squad.begin(), squad.end()); // Basic shuffle
+    
+    for (int i = 0; i < 11 && i < squad.size(); ++i) {
+        AIPlayer* p = squad[i];
+        p->matchesPlayed++;
+        
+        // Generate a random match rating (e.g. 5.0 to 9.0), slightly weighted by overall
+        float baseRating = 5.0f + (p->overall - 40) / 15.0f; 
+        float matchRating = baseRating + ((rand() % 30) - 10) / 10.0f; 
+        matchRating = std::clamp(matchRating, 3.0f, 10.0f);
+        
+        // Calculate rolling average
+        p->avgRating = ((p->avgRating * (p->matchesPlayed - 1)) + matchRating) / p->matchesPlayed;
+    }
+}
 
 CareerManager::CareerManager(GameManager* gm) : m_gameManager(gm), m_day(1) {
 }
@@ -216,6 +266,11 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
                 if (awayStr > homeStr + 5) m.awayGoalsLeg1++;
                 m.leg1Played = true;
                 
+                distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
+                distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
+                updateAITeamMatchStats(m.home);
+                updateAITeamMatchStats(m.away);
+                
                 if (m.isFinal) {
                     if (m.homeGoalsLeg1 > m.awayGoalsLeg1) m.winner = m.home;
                     else if (m.awayGoalsLeg1 > m.homeGoalsLeg1) m.winner = m.away;
@@ -236,6 +291,11 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
                 if (homeStr > awayStr + 5) m.homeGoalsLeg2++;
                 if (awayStr > homeStr + 5) m.awayGoalsLeg2++;
                 m.leg2Played = true;
+                
+                distributeGoalsToRoster(m.home, m.homeGoalsLeg2);
+                distributeGoalsToRoster(m.away, m.awayGoalsLeg2);
+                updateAITeamMatchStats(m.home);
+                updateAITeamMatchStats(m.away);
                 
                 int agg1 = m.homeGoalsLeg1 + m.awayGoalsLeg2;
                 int agg2 = m.awayGoalsLeg1 + m.homeGoalsLeg2;
@@ -258,7 +318,7 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
     simMatches(m_gameManager->getDatabase().getEuropaLeague());
 }
 
-void CareerManager::advanceDay(bool simulatePlayerClub) {
+void CareerManager::advanceDay(bool simulatePlayerClub, bool autoSave) {
     Player* p = m_gameManager->getPlayer();
     
     if (m_isSummerBreak) {
@@ -276,7 +336,7 @@ void CareerManager::advanceDay(bool simulatePlayerClub) {
             endSummerBreak();
         }
         // Auto-save during summer break
-        SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
+        if (autoSave) SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
         return;
     }
     
@@ -314,7 +374,7 @@ void CareerManager::advanceDay(bool simulatePlayerClub) {
     }
     
     // Auto-save after every day transition
-    SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
+    if (autoSave) SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
 }
 
 void CareerManager::skipSeason() {
@@ -343,6 +403,12 @@ void CareerManager::skipSeason() {
                                 m.homeGoalsLeg1 = isHomeLeg ? hg : ag;
                                 m.awayGoalsLeg1 = isHomeLeg ? ag : hg;
                                 m.leg1Played = true;
+                                
+                                distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
+                                distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
+                                updateAITeamMatchStats(m.home);
+                                updateAITeamMatchStats(m.away);
+                                
                                 if (m.isFinal) {
                                     if (hg > ag) m.winner = hc;
                                     else if (ag > hg) m.winner = ac;
@@ -357,6 +423,12 @@ void CareerManager::skipSeason() {
                                 m.homeGoalsLeg2 = isHomeLeg ? hg : ag;
                                 m.awayGoalsLeg2 = isHomeLeg ? ag : hg;
                                 m.leg2Played = true;
+                                
+                                distributeGoalsToRoster(m.home, m.homeGoalsLeg2);
+                                distributeGoalsToRoster(m.away, m.awayGoalsLeg2);
+                                updateAITeamMatchStats(m.home);
+                                updateAITeamMatchStats(m.away);
+                                
                                 int aggHome = m.homeGoalsLeg1 + m.homeGoalsLeg2;
                                 int aggAway = m.awayGoalsLeg1 + m.awayGoalsLeg2;
                                 if (aggHome > aggAway) m.winner = m.home;
@@ -402,6 +474,12 @@ void CareerManager::skipSeason() {
                 int ag = rand() % 4 + (opp->strength > p->currentClub->strength ? 1 : 0);
                 p->currentClub->goalsFor += hg; p->currentClub->goalsAgainst += ag;
                 opp->goalsFor += ag; opp->goalsAgainst += hg;
+                
+                distributeGoalsToRoster(p->currentClub, hg);
+                distributeGoalsToRoster(opp, ag);
+                updateAITeamMatchStats(p->currentClub);
+                updateAITeamMatchStats(opp);
+                
                 if (hg > ag) { p->currentClub->points += 3; p->currentClub->wins++; opp->losses++; }
                 else if (ag > hg) { opp->points += 3; opp->wins++; p->currentClub->losses++; }
                 else { p->currentClub->points += 1; p->currentClub->draws++; opp->points += 1; opp->draws++; }
@@ -412,8 +490,9 @@ void CareerManager::skipSeason() {
         } else if (getDayType() == CalendarDayType::Training) {
             p->experience += 50;
         }
-        advanceDay();
+        advanceDay(false, false);
     }
+    SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
 }
 
 void CareerManager::simulateMatchweek(bool simulatePlayerClub) {
@@ -479,6 +558,11 @@ void CareerManager::simulateMatchweek(bool simulatePlayerClub) {
                 
                 c1->goalsFor += g1; c1->goalsAgainst += g2;
                 c2->goalsFor += g2; c2->goalsAgainst += g1;
+                
+                distributeGoalsToRoster(c1, g1);
+                distributeGoalsToRoster(c2, g2);
+                updateAITeamMatchStats(c1);
+                updateAITeamMatchStats(c2);
                 
                 if (g1 > g2) {
                     c1->points += 3; c1->wins++; c2->losses++;
@@ -562,6 +646,29 @@ void CareerManager::endSeason() {
         p->currentClub = db.getClub("", clubName);
     }
     
+    // Process AI Players stats
+    for (const auto& aip : db.getPlayers()) {
+        if (aip) {
+            aip->age++;
+            aip->careerGoals += aip->goals;
+            aip->careerAssists += aip->assists;
+            aip->careerMatches += aip->matchesPlayed;
+            
+            aip->goals = 0;
+            aip->assists = 0;
+            aip->matchesPlayed = 0;
+            aip->avgRating = 0.0f;
+            
+            // Progression / Regression
+            if (aip->age < 24) {
+                if (rand() % 100 < 70) aip->overall += (1 + rand() % 3);
+            } else if (aip->age > 30) {
+                if (rand() % 100 < 60) aip->overall -= (1 + rand() % 2);
+            }
+            aip->overall = std::clamp(aip->overall, 30, 99);
+        }
+    }
+    
     db.resetStats();
     
     startSummerBreak();
@@ -632,6 +739,11 @@ void CareerManager::simulateInternationalMatches(bool simulatePlayerClub) {
             if (awayStr > homeStr + 5) m.awayGoalsLeg1++;
             m.leg1Played = true;
             
+            distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
+            distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
+            updateAITeamMatchStats(m.home);
+            updateAITeamMatchStats(m.away);
+            
             if (m.homeGoalsLeg1 > m.awayGoalsLeg1) m.winner = m.home;
             else if (m.awayGoalsLeg1 > m.homeGoalsLeg1) m.winner = m.away;
             else {
@@ -648,7 +760,8 @@ void CareerManager::simulateInternationalMatches(bool simulatePlayerClub) {
 
 void CareerManager::skipSummer() {
     while (isSummerBreak()) {
-        advanceDay();
+        advanceDay(false, false);
     }
+    SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
 }
 

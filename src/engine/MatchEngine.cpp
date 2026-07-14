@@ -58,11 +58,12 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
     }
 }
 
-void MatchEngine::addLog(const std::string& msg, EventType type, bool isHome) {
+void MatchEngine::addLog(const std::string& msg, EventType type, bool isHome, EventOutcome outcome) {
     MatchEvent e;
     e.text = "[" + std::to_string(m_minute) + "'] " + msg;
     e.type = type;
     e.isHome = isHome;
+    e.outcome = outcome;
     m_logs.push(e);
 }
 
@@ -83,7 +84,7 @@ void MatchEngine::commitEvent(const MatchEvent& event) {
         if (event.isHome) m_homeStats.shots++;
         else m_awayStats.shots++;
     } else if (event.type == EventType::Card) {
-        if (event.text.find("RED") != std::string::npos) {
+        if (event.outcome == EventOutcome::RedCard) {
             if (event.isHome) m_homeStats.redCards++;
             else m_awayStats.redCards++;
         } else {
@@ -115,7 +116,7 @@ void MatchEngine::updateMinute() {
     }
     
     if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
-        addLog("RED CARD! [USER]", EventType::Card, m_isHome);
+        addLog("RED CARD! [USER]", EventType::Card, m_isHome, EventOutcome::RedCard);
         m_userSubbedOff = true;
         m_userStartReason = "Status: SENT OFF (Red Card)";
         m_player->suspensionMatches = 2; // user suspended
@@ -124,7 +125,7 @@ void MatchEngine::updateMinute() {
     }
     
     if (m_minute == m_aiRedCardMinute && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
-        addLog("RED CARD! [AI] " + std::to_string(m_aiRedCardIndex), EventType::Card, m_aiRedCardIsHome);
+        addLog("RED CARD! [AI] " + std::to_string(m_aiRedCardIndex), EventType::Card, m_aiRedCardIsHome, EventOutcome::RedCard);
         if (m_aiRedCardIsHome) { m_homeStats.redCards++; m_homeRedCards.push_back(m_aiRedCardIndex); }
         else { m_awayStats.redCards++; m_awayRedCards.push_back(m_aiRedCardIndex); }
     }
@@ -201,89 +202,88 @@ void MatchEngine::updateMinute() {
 void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
     if (rand() % 100 < 15) {
         if (playerTeamAttacking) {
-            addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!", EventType::Goal, m_isHome);
+            addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!", EventType::Goal, m_isHome, EventOutcome::Goal);
         } else {
-            addLog("GOAL! " + m_opponentClub->name + " finds the back of the net!", EventType::Goal, !m_isHome);
+            addLog("GOAL! " + m_opponentClub->name + " finds the back of the net!", EventType::Goal, !m_isHome, EventOutcome::Goal);
         }
     } else {
         if (rand() % 2 == 0) {
-            addLog("Miss! The shot goes wide of the post.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome);
+            addLog("Miss! The shot goes wide of the post.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome, EventOutcome::Miss);
         } else {
-            addLog("Saved! The goalkeeper makes an easy stop.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome);
+            addLog("Saved! The goalkeeper makes an easy stop.", EventType::Chance, playerTeamAttacking ? m_isHome : !m_isHome, EventOutcome::Saved);
         }
     }
-    
+
     if (rand() % 100 < 15) {
         if (rand() % 100 < 10) {
             if (rand() % 2 == 0) {
-                addLog("RED CARD! A horrible challenge leaves " + m_playerClub->name + " with 10 men!", EventType::Card, m_isHome);
+                addLog("RED CARD! A horrible challenge leaves " + m_playerClub->name + " with 10 men!", EventType::Card, m_isHome, EventOutcome::RedCard);
             } else {
-                addLog("RED CARD! A horrible challenge leaves " + m_opponentClub->name + " with 10 men!", EventType::Card, !m_isHome);
+                addLog("RED CARD! A horrible challenge leaves " + m_opponentClub->name + " with 10 men!", EventType::Card, !m_isHome, EventOutcome::RedCard);
             }
         } else {
             if (rand() % 2 == 0) {
-                addLog("Yellow card for a reckless tackle by " + m_playerClub->name + ".", EventType::Card, m_isHome);
+                addLog("Yellow card for a reckless tackle by " + m_playerClub->name + ".", EventType::Card, m_isHome, EventOutcome::YellowCard);
             } else {
-                addLog("Yellow card for a reckless tackle by " + m_opponentClub->name + ".", EventType::Card, !m_isHome);
+                addLog("Yellow card for a reckless tackle by " + m_opponentClub->name + ".", EventType::Card, !m_isHome, EventOutcome::YellowCard);
             }
         }
     }
 }
 
-void MatchEngine::processMinigameResult(bool success, int actionType) {
-    if (success) {
-        m_playerRating += 0.5f;
-        if (m_playerRating > 10.0f) m_playerRating = 10.0f;
-        
-        if (m_player->position == PlayerPosition::Forward) {
-            addLog("GOAL!!! " + m_player->name + " scores a magnificent goal!", EventType::Goal, m_isHome);
+void MatchEngine::processMinigameResult(const MinigameResult& result) {
+    float ratingDelta = result.success ? (0.3f + result.accuracy * 0.4f) : -(0.2f + result.accuracy * 0.4f);
+    m_playerRating += ratingDelta;
+    if (m_playerRating > 10.0f) m_playerRating = 10.0f;
+    if (m_playerRating < 1.0f) m_playerRating = 1.0f;
+
+    bool finesse = (result.variant == ActionVariant::Finesse);
+    bool slide = (result.variant == ActionVariant::Slide);
+    bool dive = (result.variant == ActionVariant::Dive);
+    bool lofted = (result.variant == ActionVariant::Lofted);
+
+    // Branch on WHAT the player did, not on what position he nominally plays. A defender
+    // who wins the ball back can now carry it and shoot, so "position == Defender" no
+    // longer implies "this was a tackle". MinigameResult::kind is the authority - that is
+    // exactly what the typed contract exists for.
+    if (result.success) {
+        if (result.kind == MinigameActionKind::Shot) {
+            if (finesse) addLog("GOAL!!! " + m_player->name + " curls a delicate finesse shot into the corner!", EventType::Goal, m_isHome, EventOutcome::Goal);
+            else addLog("GOAL!!! " + m_player->name + " smashes a thunderous strike into the net!", EventType::Goal, m_isHome, EventOutcome::Goal);
             m_player->goals++;
-        } else if (m_player->position == PlayerPosition::Midfielder) {
-            if (m_playerTeamAttacking) {
-                if (actionType == 1) { // Solo Run
-                    addLog("GOAL!!! " + m_player->name + " scores a magnificent solo goal!", EventType::Goal, m_isHome);
-                    m_player->goals++;
-                } else if (actionType == 2) { // Backward/Sideways pass
-                    addLog("Good pass by " + m_player->name + " to keep possession.", EventType::Normal, m_isHome);
-                } else {
-                    addLog("Great pass! " + m_player->name + " creates a dangerous chance.", EventType::Chance, m_isHome);
-                    simulateAIEvent(true);
-                }
-            } else {
-                addLog("Great tackle! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome);
-            }
-        } else if (m_player->position == PlayerPosition::Defender) {
-            addLog("Great tackle! " + m_player->name + " stops a dangerous attack.", EventType::Chance, m_isHome);
-        } else if (m_player->position == PlayerPosition::Goalkeeper) {
-            addLog("What a save! " + m_player->name + " keeps the ball out!", EventType::Chance, !m_isHome);
+            m_userGoalsScored++;
+        } else if (result.kind == MinigameActionKind::Pass) {
+            if (lofted) addLog("Inch-perfect through ball! " + m_player->name + " splits the defense and creates a huge chance!", EventType::Chance, m_isHome, EventOutcome::PassGood);
+            else addLog("Great pass! " + m_player->name + " creates a dangerous chance.", EventType::Chance, m_isHome, EventOutcome::PassGood);
+            simulateAIEvent(true);
+        } else if (result.kind == MinigameActionKind::Tackle) {
+            if (slide) addLog("Perfectly timed slide tackle! " + m_player->name + " dispossesses the attacker.", EventType::Chance, m_isHome, EventOutcome::TackleWon);
+            else addLog("Great tackle! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome, EventOutcome::TackleWon);
+        } else if (result.kind == MinigameActionKind::Save) {
+            if (dive) addLog("Great save! " + m_player->name + " dives brilliantly to keep it out!", EventType::Chance, !m_isHome, EventOutcome::Saved);
+            else addLog("What a save! " + m_player->name + " keeps the ball out!", EventType::Chance, !m_isHome, EventOutcome::Saved);
         }
     } else {
-        m_playerRating -= 0.3f;
-        if (m_playerRating < 1.0f) m_playerRating = 1.0f;
-        
-        if (m_player->position == PlayerPosition::Forward) {
-            addLog(m_player->name + " misses a golden opportunity!", EventType::Chance, m_isHome);
-        } else if (m_player->position == PlayerPosition::Midfielder) {
-            if (m_playerTeamAttacking) {
-                if (actionType == 1) { // Solo Run
-                    addLog(m_player->name + " makes a great run but misses the shot!", EventType::Chance, m_isHome);
-                } else {
-                    addLog(m_player->name + " loses the ball with a bad pass.", EventType::Chance, !m_isHome);
-                }
+        if (result.kind == MinigameActionKind::Shot) {
+            if (finesse) addLog(m_player->name + "'s finesse effort lacks conviction, straight at the keeper!", EventType::Chance, m_isHome, EventOutcome::Miss);
+            else addLog(m_player->name + " misses a golden opportunity!", EventType::Chance, m_isHome, EventOutcome::Miss);
+        } else if (result.kind == MinigameActionKind::Pass) {
+            if (lofted) addLog(m_player->name + " tries an ambitious through ball but it's cut out by the defense.", EventType::Chance, !m_isHome, EventOutcome::PassBad);
+            else addLog(m_player->name + " loses the ball with a bad pass.", EventType::Chance, !m_isHome, EventOutcome::PassBad);
+        } else if (result.kind == MinigameActionKind::Tackle) {
+            int foulRoll = rand() % 100;
+            if (slide && foulRoll < 30) {
+                addLog("Yellow card for a mistimed sliding tackle by " + m_player->name + "!", EventType::Card, m_isHome, EventOutcome::YellowCard);
+            } else if (rand() % 100 < 50) {
+                addLog("GOAL! " + m_opponentClub->name + " scores after a mistake by " + m_player->name + "!", EventType::Goal, !m_isHome, EventOutcome::Goal);
             } else {
-                addLog(m_player->name + " gets beaten, opponent moves forward.", EventType::Chance, !m_isHome);
-                simulateAIEvent(false);
+                addLog(m_player->name + " gets beaten, but the opponent misses.", EventType::Chance, !m_isHome, EventOutcome::TackleLost);
             }
-        } else if (m_player->position == PlayerPosition::Defender) {
-            if (rand() % 100 < 50) {
-                addLog("GOAL! " + m_opponentClub->name + " scores after a mistake by " + m_player->name + "!", EventType::Goal, !m_isHome);
-            } else {
-                addLog(m_player->name + " gets beaten, but the opponent misses.", EventType::Chance, !m_isHome);
-            }
-        } else if (m_player->position == PlayerPosition::Goalkeeper) {
-            addLog("GOAL! " + m_opponentClub->name + " scores! " + m_player->name + " couldn't stop it.", EventType::Goal, !m_isHome);
+        } else if (result.kind == MinigameActionKind::Save) {
+            if (dive) addLog("GOAL! " + m_opponentClub->name + " scores! " + m_player->name + " dives the wrong way!", EventType::Goal, !m_isHome, EventOutcome::Goal);
+            else addLog("GOAL! " + m_opponentClub->name + " scores! " + m_player->name + " couldn't stop it.", EventType::Goal, !m_isHome, EventOutcome::Goal);
         }
     }
-    
+
     m_state = MatchState::Simulating;
 }

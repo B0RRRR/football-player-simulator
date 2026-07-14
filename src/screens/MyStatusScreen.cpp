@@ -74,6 +74,21 @@ void MyStatusScreen::init() {
                                         btnRequestPlayTime.rect.getPosition().y + btnRequestPlayTime.rect.getSize().y/2.0f);
     btnRequestPlayTime.action = "RequestPlayTime";
     m_buttons.push_back(btnRequestPlayTime);
+    
+    Button btnToggleAchievements;
+    btnToggleAchievements.rect.setSize(sf::Vector2f(250.f, 40.f));
+    btnToggleAchievements.rect.setPosition(450.f, 220.f);
+    btnToggleAchievements.baseColor = sf::Color(150, 150, 50);
+    btnToggleAchievements.text.setFont(font);
+    btnToggleAchievements.text.setString("Toggle Achievements");
+    btnToggleAchievements.text.setCharacterSize(18);
+    btnToggleAchievements.text.setFillColor(sf::Color::White);
+    textRect = btnToggleAchievements.text.getLocalBounds();
+    btnToggleAchievements.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
+    btnToggleAchievements.text.setPosition(btnToggleAchievements.rect.getPosition().x + btnToggleAchievements.rect.getSize().x/2.0f,
+                                        btnToggleAchievements.rect.getPosition().y + btnToggleAchievements.rect.getSize().y/2.0f);
+    btnToggleAchievements.action = "ToggleAchievements";
+    m_buttons.push_back(btnToggleAchievements);
 }
 
 void MyStatusScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -113,6 +128,8 @@ void MyStatusScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
                         if (p->coachTrust < 0.0f) p->coachTrust = 0.0f;
                     }
                     m_messageTimer = 5.0f;
+                } else if (btn.action == "ToggleAchievements") {
+                    m_showAchievements = !m_showAchievements;
                 }
             }
         }
@@ -141,18 +158,30 @@ void MyStatusScreen::update(sf::Time deltaTime) {
         }
     }
 
-    std::string info = "Club: " + (p->currentClub ? p->currentClub->name : "None") + "\n\n";
-    info += "Coach Trust: " + std::to_string((int)p->coachTrust) + " / 100\n";
-    if (p->coachTrust < 30.0f) info += "Status: BENCHED\n";
-    else info += "Status: ACTIVE\n";
-    
-    info += "\nContract: " + std::to_string(p->contractYearsLeft) + " years left\n";
-    info += "Salary: $" + std::to_string(p->salary) + "/w\n";
-    
-    if (p->isTransferListed) {
-        info += "\nTransfer Status: LISTED\n";
+    std::string info = "";
+    if (m_showAchievements) {
+        info = "=== ACHIEVEMENTS ===\n\n";
+        if (p->achievements.empty()) {
+            info += "No achievements yet. Keep playing!\n";
+        } else {
+            for (const auto& ach : p->achievements) {
+                info += "- " + ach + "\n";
+            }
+        }
     } else {
-        info += "\nTransfer Status: NOT FOR SALE\n";
+        info = "Club: " + (p->currentClub ? p->currentClub->name : "None") + "\n\n";
+        info += "Coach Trust: " + std::to_string((int)p->coachTrust) + " / 100\n";
+        if (p->coachTrust < 30.0f) info += "Status: BENCHED\n";
+        else info += "Status: ACTIVE\n";
+        
+        info += "\nContract: " + std::to_string(p->contractYearsLeft) + " years left\n";
+        info += "Salary: $" + std::to_string(p->salary) + "/w\n";
+        
+        if (p->isTransferListed) {
+            info += "\nTransfer Status: LISTED\n";
+        } else {
+            info += "\nTransfer Status: NOT FOR SALE\n";
+        }
     }
     
     m_infoText.setString(info);

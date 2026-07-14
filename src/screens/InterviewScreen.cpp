@@ -1,5 +1,6 @@
 #include "UITheme.h"
 #include "InterviewScreen.h"
+#include "AwardsScreen.h"
 #include "SeasonEndScreen.h"
 #include "GameManager.h"
 #include "CareerManager.h"
@@ -255,7 +256,7 @@ void InterviewScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
         for (auto& btn : m_buttons) {
             if (btn.rect.getGlobalBounds().contains(mousePos)) {
                 if (m_isFinished) {
-                    m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
+                    m_gameManager->changeScreen(std::make_shared<AwardsScreen>());
                 } else {
                     applyOption(btn.option);
                 }

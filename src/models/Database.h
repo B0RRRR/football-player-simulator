@@ -2,6 +2,29 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <memory>
+#include "Player.h"
+
+struct AIPlayer {
+    std::string name;
+    std::string nationality;
+    PlayerPosition position;
+    int overall = 50;
+    int age = 18;
+    
+    Club* currentClub = nullptr;
+    
+    // Season Stats
+    int goals = 0;
+    int assists = 0;
+    int matchesPlayed = 0;
+    float avgRating = 0.0f;
+    
+    // Career Stats
+    int careerGoals = 0;
+    int careerAssists = 0;
+    int careerMatches = 0;
+};
 
 struct Club {
     std::string name;
@@ -14,6 +37,8 @@ struct Club {
     int losses = 0;
     int goalsFor = 0;
     int goalsAgainst = 0;
+    
+    std::vector<AIPlayer*> roster;
 };
 
 struct League {
@@ -57,6 +82,7 @@ public:
     
     // Initialize the hardcoded database
     void init();
+    void generatePlayers();
     
     // Reset league table stats for all clubs
     void resetStats();
@@ -93,9 +119,13 @@ public:
     void initNationalTeams();
     void generateWorldCup();
     void generateEuroCup();
+    
+    const std::vector<std::unique_ptr<AIPlayer>>& getPlayers() const { return m_players; }
+    void addPlayer(std::unique_ptr<AIPlayer> player) { m_players.push_back(std::move(player)); }
 
 private:
     std::vector<League> m_leagues;
+    std::vector<std::unique_ptr<AIPlayer>> m_players;
     std::map<int, std::vector<League>> m_leagueHistory;
     League m_nationalTeams; // Holds all national teams
     Tournament m_championsLeague;

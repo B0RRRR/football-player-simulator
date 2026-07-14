@@ -2,9 +2,10 @@
 #include "LeagueTableScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
-#include "AssetManager.h"
+#include "CareerManager.h"
 #include "Player.h"
-#include "Database.h"
+#include "AssetManager.h"
+#include "SeasonEndScreen.h"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -63,7 +64,11 @@ void LeagueTableScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
         sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
         
         if (m_backButton.rect.getGlobalBounds().contains(mousePos)) {
-            m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+            if (m_gameManager->getPlayer()->weeksPlayed >= m_gameManager->getCareerManager()->getSeasonLength()) {
+                m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
+            } else {
+                m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+            }
         } else if (m_prevYearBtn.rect.getGlobalBounds().contains(mousePos)) {
             m_viewedYear--;
         } else if (m_nextYearBtn.rect.getGlobalBounds().contains(mousePos)) {

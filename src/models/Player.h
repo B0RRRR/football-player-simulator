@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 enum class PlayerPosition {
     Goalkeeper,
@@ -46,4 +47,6 @@ public:
     
     bool isTransferListed = false;
     int contractYearsLeft = 3;
+    
+    std::vector<std::string> achievements;
 };

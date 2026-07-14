@@ -1,4 +1,5 @@
 #include "Database.h"
+#include "NameGenerator.h"
 #include <algorithm>
 #include <random>
 
@@ -123,6 +124,59 @@ void Database::init() {
     m_leagues.push_back(ligue2);
     
     initNationalTeams();
+    
+    generatePlayers();
+}
+
+void Database::generatePlayers() {
+    m_players.clear();
+    
+    // Nations to use for random nationalities
+    std::vector<std::string> nations = {"England", "Spain", "Italy", "Germany", "France", "Portugal", "Brazil", "Argentina", "Netherlands"};
+    
+    for (auto& league : m_leagues) {
+        std::string hostNation = "";
+        if (league.name == "Premier League" || league.name == "Championship") hostNation = "England";
+        else if (league.name == "La Liga" || league.name == "Segunda Division") hostNation = "Spain";
+        else if (league.name == "Serie A" || league.name == "Serie B") hostNation = "Italy";
+        else if (league.name == "Bundesliga" || league.name == "2. Bundesliga") hostNation = "Germany";
+        else if (league.name == "Ligue 1" || league.name == "Ligue 2") hostNation = "France";
+        
+        for (auto& club : league.clubs) {
+            club.roster.clear();
+            
+            // Generate 25 players for each club: 3 GK, 8 DEF, 8 MID, 6 FWD
+            int counts[] = {3, 8, 8, 6};
+            PlayerPosition posList[] = {PlayerPosition::Goalkeeper, PlayerPosition::Defender, PlayerPosition::Midfielder, PlayerPosition::Forward};
+            
+            for (int pType = 0; pType < 4; ++pType) {
+                for (int i = 0; i < counts[pType]; ++i) {
+                    auto player = std::make_unique<AIPlayer>();
+                    
+                    // 60% chance to be from host nation, 40% random
+                    std::string nat = hostNation;
+                    if (nat.empty() || (rand() % 100 < 40)) {
+                        nat = nations[rand() % nations.size()];
+                    }
+                    
+                    player->name = NameGenerator::generateName(nat);
+                    player->nationality = nat;
+                    player->position = posList[pType];
+                    
+                    // Strength around club's strength (-5 to +5)
+                    int baseStrength = club.strength;
+                    int offset = (rand() % 11) - 5;
+                    player->overall = std::clamp(baseStrength + offset, 40, 99);
+                    
+                    player->age = 17 + (rand() % 18); // 17 to 34
+                    player->currentClub = &club;
+                    
+                    m_players.push_back(std::move(player));
+                    club.roster.push_back(m_players.back().get());
+                }
+            }
+        }
+    }
 }
 
 Club* Database::getClub(const std::string& leagueName, const std::string& clubName) {

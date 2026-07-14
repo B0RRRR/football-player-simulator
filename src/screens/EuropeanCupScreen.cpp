@@ -2,8 +2,10 @@
 #include "EuropeanCupScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
-#include "AssetManager.h"
+#include "CareerManager.h"
 #include "Player.h"
+#include "AssetManager.h"
+#include "SeasonEndScreen.h"
 #include <sstream>
 
 EuropeanCupScreen::EuropeanCupScreen() : m_currentView(0), m_selectedYear(0), m_maxYear(0) {
@@ -46,7 +48,6 @@ void EuropeanCupScreen::init() {
     
     createBtn("Champions League", 50.f, 140.f, "CL");
     createBtn("Europa League", 260.f, 140.f, "EL");
-    createBtn("Int. Tournament", 470.f, 140.f, "INT");
     createBtn("Int. Tournament", 470.f, 140.f, "INT");
     createBtn("Back", 600.f, 520.f, "BACK");
     
@@ -200,7 +201,11 @@ void EuropeanCupScreen::handleInput(sf::RenderWindow& window, const sf::Event& e
                     m_currentView = 2;
                     updateBracketVisuals();
                 } else if (btn.action == "BACK") {
-                    m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                    if (m_gameManager->getPlayer()->weeksPlayed >= m_gameManager->getCareerManager()->getSeasonLength()) {
+                        m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
+                    } else {
+                        m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+                    }
                 } else if (btn.action == "PREV") {
                     if (m_selectedYear > 2024) { // Assuming 2024 is start year
                         m_selectedYear--;

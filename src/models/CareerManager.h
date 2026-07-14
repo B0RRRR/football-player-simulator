@@ -14,8 +14,11 @@ class CareerManager {
 public:
     CareerManager(GameManager* gm);
     
+    static void distributeGoalsToRoster(Club* club, int goals);
+    static void updateAITeamMatchStats(Club* club);
+    
     void resetCareer();
-    void advanceDay(bool simulatePlayerClub = false);
+    void advanceDay(bool simulatePlayerClub = false, bool autoSave = true);
     void simulateMatchweek(bool simulatePlayerClub = false); // Simulate results for all other clubs
     void endSeason();
     int getSeasonLength() const;

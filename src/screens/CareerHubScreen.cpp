@@ -17,6 +17,7 @@
 #include "SettingsScreen.h"
 #include "TransferScreen.h"
 #include "MyStatusScreen.h"
+#include "SquadScreen.h"
 
 CareerHubScreen::CareerHubScreen() {
 }
@@ -54,13 +55,13 @@ void CareerHubScreen::init() {
     m_calendarText.setFillColor(sf::Color::Yellow);
     m_calendarText.setPosition(400.f, 100.f);
     
-    std::vector<std::string> buttonLabels = {"Advance Day", "My Status", "Upgrades", "League Table", "Tournaments", "Quit to Menu"};
-    float startY = 380.f;
+    std::vector<std::string> buttonLabels = {"Advance Day", "My Status", "My Squad", "Upgrades", "League Table", "Tournaments", "Quit to Menu"};
+    float startY = 320.f;
     
     for (size_t i = 0; i < buttonLabels.size(); ++i) {
         Button btn;
-        btn.rect.setSize(sf::Vector2f(300.f, 45.f));
-        btn.rect.setPosition(50.f, startY + i * 55.f);
+        btn.rect.setSize(sf::Vector2f(300.f, 40.f));
+        btn.rect.setPosition(50.f, startY + i * 48.f);
         btn.baseColor = UITheme::ButtonNormal;
         
         btn.text.setFont(font);
@@ -156,6 +157,8 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     m_gameManager->changeScreen(std::make_shared<TransferScreen>());
                 } else if (btn.action == "My Status") {
                     m_gameManager->changeScreen(std::make_shared<MyStatusScreen>());
+                } else if (btn.action == "My Squad") {
+                    m_gameManager->changeScreen(std::make_shared<SquadScreen>());
                 } else if (btn.action == "Advance Day" || btn.action == "Recovery") {
                     Player* p = m_gameManager->getPlayer();
                     CareerManager* cm = m_gameManager->getCareerManager();
@@ -276,7 +279,13 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                             if (engine->getState() == MatchState::Simulating) {
                                 engine->updateMinute();
                             } else if (engine->getState() == MatchState::MinigameTriggered) {
-                                engine->processMinigameResult(rand() % 2 == 0); // 50% win rate for auto-sim
+                                // 50% win rate for auto-sim, with randomized power/accuracy
+                                MinigameResult autoResult;
+                                autoResult.success = rand() % 2 == 0;
+                                autoResult.kind = MinigameActionKind::Shot;
+                                autoResult.power = (rand() % 100) / 100.f;
+                                autoResult.accuracy = (rand() % 100) / 100.f;
+                                engine->processMinigameResult(autoResult);
                             }
                             
                             while (engine->hasLogs()) {

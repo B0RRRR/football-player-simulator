@@ -28,10 +28,52 @@ enum class EventType {
     PendingMinigame
 };
 
+enum class EventOutcome {
+    None,
+    Goal,
+    Miss,
+    Saved,
+    Blocked,
+    TackleWon,
+    TackleLost,
+    Intercepted,
+    PassGood,
+    PassBad,
+    Foul,
+    YellowCard,
+    RedCard
+};
+
 struct MatchEvent {
     std::string text;
-    EventType type;
-    bool isHome; // true if it's the home team doing the action
+    EventType type = EventType::Normal;
+    bool isHome = true; // true if it's the home team doing the action
+    EventOutcome outcome = EventOutcome::None;
+};
+
+enum class MinigameActionKind {
+    Shot,
+    Pass,
+    Tackle,
+    Save,
+    Dribble
+};
+
+enum class ActionVariant {
+    Default,
+    Power,
+    Finesse,
+    Lofted,
+    Slide,
+    Dive
+};
+
+struct MinigameResult {
+    bool success;
+    MinigameActionKind kind;
+    float power = 0.5f;    // 0..1, normalized shot/pass power
+    float accuracy = 0.5f; // 0..1, normalized placement accuracy
+    ActionVariant variant = ActionVariant::Default;
 };
 
 class Player; // Forward declaration
@@ -43,7 +85,7 @@ public:
     void updateMinute();
     void commitEvent(const MatchEvent& event);
     void triggerMinigame();
-    void processMinigameResult(bool success, int actionType = 0);
+    void processMinigameResult(const MinigameResult& result);
     
     void setPlayerTeamAttacking(bool att) { m_playerTeamAttacking = att; }
     
@@ -58,6 +100,8 @@ public:
     
     MatchEvent popRecentLog();
     bool hasLogs() const { return !m_logs.empty(); }
+    
+    int getUserGoalsScored() const { return m_userGoalsScored; }
 
     const std::vector<float>& getMomentumHistory() const { return m_momentumHistory; }
 
@@ -73,7 +117,7 @@ public:
 
 private:
     void simulateAIEvent(bool playerTeamAttacking);
-    void addLog(const std::string& msg, EventType type = EventType::Normal, bool isHome = true);
+    void addLog(const std::string& msg, EventType type = EventType::Normal, bool isHome = true, EventOutcome outcome = EventOutcome::None);
 
     Club* m_playerClub;
     Club* m_opponentClub;
@@ -99,6 +143,8 @@ private:
     int m_aiRedCardMinute = -1;
     bool m_aiRedCardIsHome = false;
     int m_aiRedCardIndex = -1;
+    
+    int m_userGoalsScored = 0;
     
     std::queue<MatchEvent> m_logs;
     std::vector<float> m_momentumHistory;

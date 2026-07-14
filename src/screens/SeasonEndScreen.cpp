@@ -6,6 +6,7 @@
 #include "AssetManager.h"
 #include "LeagueTableScreen.h"
 #include "EuropeanCupScreen.h"
+#include "SquadScreen.h"
 
 SeasonEndScreen::SeasonEndScreen() {
 }
@@ -49,8 +50,9 @@ void SeasonEndScreen::init() {
         m_buttons.push_back(btn);
     };
     
-    createBtn("View League Table", 400.f, "LEAGUE", sf::Color(70, 70, 150));
-    createBtn("View European Cups", 460.f, "CUPS", sf::Color(150, 100, 50));
+    createBtn("View League Table", 340.f, "LEAGUE", sf::Color(70, 70, 150));
+    createBtn("View European Cups", 400.f, "CUPS", sf::Color(150, 100, 50));
+    createBtn("View Squad Stats", 460.f, "SQUAD", sf::Color(150, 50, 150));
     createBtn("Proceed to Pre-Season", 520.f, "NEXT", sf::Color(70, 150, 70));
 }
 
@@ -69,10 +71,8 @@ void SeasonEndScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
                 } else if (btn.action == "CUPS") {
                     m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
-                } else if (btn.action == "LEAGUE") {
-                    m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
-                } else if (btn.action == "CUPS") {
-                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
+                } else if (btn.action == "SQUAD") {
+                    m_gameManager->changeScreen(std::make_shared<SquadScreen>());
                 }
             }
         }
