@@ -15,7 +15,8 @@ enum class VisualState {
     GoalKick,
     PassingScript,
     PressingScript,
-    Foul
+    FoulChallenge, // the foul being committed - offender lunges into the victim
+    Foul           // dead ball on the spot, taker walks up
 };
 
 // Beats of a scripted episode. These were bare ints (0,1,2,3,9..12,40..44,50..52,
@@ -49,6 +50,18 @@ enum class Beat {
     GkShotWindup     = 70  // attacker winds up; the save QTE arms on release
 };
 
+// The build-up shape of an attack. This used to be an int (m_attackType) that meant
+// Wing/Solo/Center (0/1/2) AND, in the midfielder pass path, pass direction (2/3) -
+// two unrelated axes on one variable. Pass direction now lives in m_passForward.
+enum class AttackShape {
+    WingCross,    // was m_attackType 0
+    SoloRun,      // was 1
+    CenterAttack, // was 2
+    Counter,
+    ThroughBall,
+    LongShot
+};
+
 struct PlayerDot {
     sf::CircleShape shape;
     sf::Vector2f targetPos;
@@ -68,6 +81,11 @@ private:
     void initMinigame();
     void updateMinigame(sf::Time deltaTime);
     bool hasRedCard(int globalIdx) const;
+    // Returns idx if that player is still on the pitch, otherwise the nearest live
+    // team-mate. Scripts target players by fixed index; a sent-off player is invisible
+    // but his dot still exists, so a cross/pass aimed at him sent the ball drifting to
+    // an empty spot ("bouncing off the air").
+    int liveTeammate(int idx) const;
     void updateVisuals(sf::Time deltaTime);
     void resetToKickoff();
     MinigameResult buildMinigameResult(bool success, MinigameActionKind kind, ActionVariant variant = ActionVariant::Default) const;
@@ -87,6 +105,9 @@ private:
     // Dead-ball restart after a foul/card. offenderIsHome names the team that gave it
     // away; the other side takes the kick.
     void setupFreeKick(bool offenderIsHome);
+    // Plays a brief visible challenge (offender lunges into victim) before the dead ball,
+    // so a card/foul reads as an actual foul rather than the ball just stopping.
+    void beginFoul(bool offenderIsHome);
     // Shared state every episode beat needs, computed once per frame.
     struct EpisodeCtx {
         int attackerBase;
@@ -109,6 +130,9 @@ private:
     void runDefenderTackle(float dt, const EpisodeCtx& ctx);
     void runGoalkeeperSave(float dt, const EpisodeCtx& ctx);
     void runShotResolution(float dt, const EpisodeCtx& ctx);
+    // Weighted pick of the build-up shape from the match situation (momentum, score,
+    // relative strength), replacing a flat rand()%3.
+    AttackShape pickAttackShape(bool attackingHome) const;
 
     // Steers all dots toward their targets. Runs in normal play AND during a minigame.
     void updateDotMotion(float dt);
@@ -141,6 +165,8 @@ private:
     
     int m_foulPlayerIdx = -1; // who restarts play after a foul
     int m_foulVictimIdx = -1;
+    int m_foulOffenderIdx = -1;      // who committed the foul (shown lunging in)
+    bool m_foulOffenderIsHome = true; // remembered across the challenge -> free kick
     
     std::vector<MatchEvent> m_visibleLogs;
     std::vector<sf::RectangleShape> m_momentumBars;
@@ -160,7 +186,8 @@ private:
     VisualState m_visualState;
     float m_stateTimer;
     MatchEvent m_pendingEvent;
-    int m_attackType;
+    AttackShape m_attackShape = AttackShape::CenterAttack;
+    bool m_passForward = true; // midfielder pass: forward (to a shot) vs sideways/back
     int m_attackWingerIdx;
     float m_shotTargetY;
     int m_attackFwdIdx;

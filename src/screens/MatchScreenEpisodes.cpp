@@ -97,7 +97,15 @@ void MatchScreen::updateMinigameAI(float dt) {
     int oppStrength = m_engine->getOpponentClub() ? m_engine->getOpponentClub()->strength : 70;
     float chaseSpeed = 90.f + (oppStrength / 100.f) * 60.f; // ~90..150
 
-    // --- Opponents: the two nearest close down the ball, the rest hold shape.
+    // Are WE the ones on the ball? Only then do opponents swarm it. When the user is
+    // defending (a tackle/save), the ball is the opponent's to lose - having every nearby
+    // opponent pile onto it meant a second opponent would run in and boot the loose ball
+    // away before the user could get his tackle in. Computed up front so the press logic
+    // below can gate on it.
+    bool userOnBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+
+    // --- Opponents: the two nearest close down the ball (only when we have it), the rest
+    // hold shape.
     std::vector<std::pair<float, int>> byDist;
     for (int i = oppBase; i < oppBase + 11; ++i) {
         if (i % 11 == 0) continue;      // their keeper handled below
@@ -109,11 +117,13 @@ void MatchScreen::updateMinigameAI(float dt) {
 
     for (size_t k = 0; k < byDist.size(); ++k) {
         int idx = byDist[k].second;
-        if (k < 2) {
+        if (userOnBall && k < 2) {
             m_dots[idx].targetPos = ballPos; // press the ball
             m_dots[idx].speed = chaseSpeed;
         } else {
-            // Hold a loose shape, drifting goal-side of the ball.
+            // Hold a loose shape, drifting goal-side of the ball. When the user is
+            // defending, everyone holds - so the one man he's tackling is a stable target
+            // and no one else swoops in on the loose ball.
             sf::Vector2f pos = m_dots[idx].shape.getPosition();
             m_dots[idx].targetPos = sf::Vector2f(pos.x - attackDir * 8.f, pos.y);
             m_dots[idx].speed = 60.f;
@@ -156,21 +166,19 @@ void MatchScreen::updateMinigameAI(float dt) {
         m_dots[gk].speed = 90.f;
     }
 
-    // --- Pressure: an opponent who reaches the ball while WE have it wins it back.
-    // Only when the user is the one on the ball - when he's defending (Tackle/Save)
-    // the opponent already has it, and "losing" it to them would be nonsense.
-    // Kind-based, not position-based: a defender who has just won the ball is on it, and a
-    // midfielder who is defending is not.
-    bool userOnBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+    // --- Pressure: an opponent who reaches the ball while WE have it wins it back
+    // (userOnBall computed above). When he's defending (Tackle/Save) the opponent already
+    // has it, so there's nothing to lose here.
 
     // A committed action is untouchable: the player has already planted his foot, and
     // sniping the ball mid-QTE would punish someone who did everything right.
     if (!userOnBall || m_qte.isActive() || byDist.empty()) return;
 
-    // Grace period. The attack scripts park defenders right on top of the carrier
-    // (15-60px away), so without this the nearest one reaches the ball in well under a
-    // second and the player never gets to act at all.
-    const float GRACE = 2.0f;
+    // Grace period. The attack scripts hand over control with a defender already right on
+    // top of the carrier (~15px), so the player needs a real window to shoot or pass
+    // before anyone can rob him - otherwise it feels like the ball is taken the instant
+    // control arrives. Long enough to comfortably start an action.
+    const float GRACE = 3.5f;
     if (m_minigameTimer < GRACE) return;
 
     // Once the ball has been struck it's gone - nobody "tackles" a shot that's already
@@ -185,17 +193,55 @@ void MatchScreen::updateMinigameAI(float dt) {
     float gap = byDist[0].first;
     if (gap > 14.f) return;
 
-    // One attempt at a time, not one per frame.
-    m_tackleAttemptTimer = 0.7f;
+    // One attempt roughly every second, not one per frame.
+    m_tackleAttemptTimer = 1.0f;
 
-    // Contact isn't an automatic steal - weigh their tackling against our ball control.
-    int duel = 40 + (oppStrength - (p->passing + p->shooting) / 2) / 2;
-    duel = std::clamp(duel, 10, 75);
+    // Contact isn't an automatic steal - weigh their tackling against our ball control,
+    // and keep the ceiling low enough that dwelling on the ball is risky but not a
+    // guaranteed loss.
+    int duel = 28 + (oppStrength - (p->passing + p->shooting) / 2) / 2;
+    duel = std::clamp(duel, 8, 55);
     if ((rand() % 100) >= duel) return;
 
     m_qteAccuracy = 0.f;
     m_engine->processMinigameResult(buildMinigameResult(false, m_pendingKind, m_pendingVariant));
     endMinigame();
+}
+
+void MatchScreen::beginFoul(bool offenderIsHome) {
+    // Tear down any live minigame first (a mistimed slide tackle gives a card from inside
+    // an episode), so its physics/zoom don't run over the challenge.
+    if (m_minigameActive) {
+        endMinigame();
+    }
+
+    m_foulOffenderIsHome = offenderIsHome;
+
+    sf::Vector2f spot = m_visualBall.getPosition();
+    m_ballVelocity = sf::Vector2f(0.f, 0.f);
+    m_ballFriction = 1.5f;
+    m_ballCarrierIdx = -1;
+
+    // Offender = nearest outfield player of the offending side; victim = nearest of the
+    // fouled side. They're the two that act out the challenge over the ball.
+    int offBase = offenderIsHome ? 0 : 11;
+    int vicBase = offenderIsHome ? 11 : 0;
+    auto nearest = [&](int base) {
+        int best = -1; float bd = 1e9f;
+        for (int i = base; i < base + 11; ++i) {
+            if (i % 11 == 0) continue;      // not the keeper
+            if (hasRedCard(i)) continue;
+            sf::Vector2f d = m_dots[i].shape.getPosition() - spot;
+            float dd = std::hypot(d.x, d.y);
+            if (dd < bd) { bd = dd; best = i; }
+        }
+        return best;
+    };
+    m_foulOffenderIdx = nearest(offBase);
+    m_foulVictimIdx = nearest(vicBase);
+
+    m_visualState = VisualState::FoulChallenge;
+    m_stateTimer = 0.f;
 }
 
 void MatchScreen::setupFreeKick(bool offenderIsHome) {
@@ -329,6 +375,36 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             resetToKickoff();
         }
     }
+    else if (m_visualState == VisualState::FoulChallenge) {
+        // Show the foul being committed: the offender lunges into the victim over the
+        // ball, the victim stumbles, then the whistle goes and we settle into the dead
+        // ball. Without this the ball just stopped for no visible reason.
+        m_ballCarrierIdx = -1;
+        sf::Vector2f spot = m_visualBall.getPosition();
+
+        if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
+            sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
+            // Offender charges into the victim.
+            m_dots[m_foulOffenderIdx].targetPos = vicPos;
+            m_dots[m_foulOffenderIdx].speed = 260.f;
+            // Victim is knocked back off the ball and staggers away from the offender.
+            sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
+            sf::Vector2f away = vicPos - offPos;
+            float len = std::hypot(away.x, away.y);
+            if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
+            m_dots[m_foulVictimIdx].targetPos = vicPos + away * 28.f;
+            m_dots[m_foulVictimIdx].speed = 90.f;
+        }
+
+        // Keep the ball dead on the spot through the challenge.
+        m_visualBall.setPosition(spot);
+        m_ballTarget = spot;
+        m_ballVelocity = sf::Vector2f(0.f, 0.f);
+
+        if (m_stateTimer > 1.3f) {
+            setupFreeKick(m_foulOffenderIsHome); // whistle: settle into the dead ball
+        }
+    }
     else if (m_visualState == VisualState::Foul) {
         // Dead ball: it stays on the spot while the taker walks up to it, then he
         // knocks it back into play.
@@ -425,6 +501,8 @@ void MatchScreen::updateAttackEpisode(float dt) {
         int numDefendersToRun = 4;
         if (m_attackPhase == Beat::MidPassHold || m_attackPhase == Beat::PassReceived) {
             numDefendersToRun = m_attackWingerIdx; // the value we stored (1 or 2)
+        } else if (m_attackShape == AttackShape::Counter) {
+            numDefendersToRun = 1; // caught out - only one defender recovers, so it's a real break
         }
 
         for (int i = 1; i <= numDefendersToRun; ++i) {
@@ -434,6 +512,62 @@ void MatchScreen::updateAttackEpisode(float dt) {
             m_dots[ctx.defenderBase + i].targetPos = sf::Vector2f(carrierPos.x + offsetX, carrierPos.y + offsetY);
         }
     }
+}
+
+AttackShape MatchScreen::pickAttackShape(bool attackingHome) const {
+    // Weighted pick, not hard rules: every shape keeps a floor weight so anything can
+    // still turn up. The situation only tilts the odds, so attacks stay unpredictable
+    // but stop feeling like a flat dice roll.
+    float w[6];
+    w[(int)AttackShape::WingCross]    = 10.f;
+    w[(int)AttackShape::SoloRun]      = 8.f;
+    w[(int)AttackShape::CenterAttack] = 10.f;
+    w[(int)AttackShape::Counter]      = 5.f;
+    w[(int)AttackShape::ThroughBall]  = 6.f;
+    w[(int)AttackShape::LongShot]     = 4.f;
+
+    // Momentum: +100 = home dominating, -100 = away. A sharp swing toward the side now
+    // attacking reads as a turnover won high up -> favour the fast break.
+    float momentum = m_engine->getMomentumHistory().empty() ? 0.f : m_engine->getMomentumHistory().back();
+    float towardUs = attackingHome ? momentum : -momentum; // >0 = this side is on top
+    if (towardUs > 40.f) w[(int)AttackShape::Counter] += 8.f;
+
+    // Score: a side that's behind gambles more (long shots, balls in behind); a side in
+    // front keeps it patient on the flanks/through the middle.
+    int goalDiff = m_engine->getHomeScore() - m_engine->getAwayScore();
+    int ourLead = attackingHome ? goalDiff : -goalDiff;
+    if (ourLead < 0) {
+        w[(int)AttackShape::LongShot]    += 6.f;
+        w[(int)AttackShape::ThroughBall] += 5.f;
+        w[(int)AttackShape::Counter]     += 3.f;
+    } else if (ourLead > 0) {
+        w[(int)AttackShape::WingCross]    += 5.f;
+        w[(int)AttackShape::CenterAttack] += 4.f;
+    }
+
+    // Relative strength: the stronger side builds patiently; the weaker side has to be
+    // direct to hurt them.
+    int myStr  = attackingHome ? (m_engine->isHome() ? m_engine->getPlayerClub()->strength : m_engine->getOpponentClub()->strength)
+                               : (m_engine->isHome() ? m_engine->getOpponentClub()->strength : m_engine->getPlayerClub()->strength);
+    int oppStr = attackingHome ? (m_engine->isHome() ? m_engine->getOpponentClub()->strength : m_engine->getPlayerClub()->strength)
+                               : (m_engine->isHome() ? m_engine->getPlayerClub()->strength : m_engine->getOpponentClub()->strength);
+    int edge = myStr - oppStr;
+    if (edge > 8) {
+        w[(int)AttackShape::WingCross]    += 5.f;
+        w[(int)AttackShape::CenterAttack] += 4.f;
+    } else if (edge < -8) {
+        w[(int)AttackShape::Counter]  += 5.f;
+        w[(int)AttackShape::LongShot] += 4.f;
+    }
+
+    float total = 0.f;
+    for (float x : w) total += x;
+    float r = (rand() % 1000) / 1000.f * total;
+    for (int i = 0; i < 6; ++i) {
+        if (r < w[i]) return (AttackShape)i;
+        r -= w[i];
+    }
+    return AttackShape::CenterAttack;
 }
 
 void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
@@ -465,10 +599,10 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_attackPhase = Beat::DefTacklePrep;
                     m_stateTimer = 0.f;
                     int options[] = {9, 10};
-                    m_attackFwdIdx = ctx.attackerBase + options[rand() % 2];
+                    m_attackFwdIdx = liveTeammate(ctx.attackerBase + options[rand() % 2]);
 
-                    m_attackWingerIdx = ctx.attackerBase + 5; // Use winger index as passer
-                    m_ballCarrierIdx = m_attackWingerIdx; 
+                    m_attackWingerIdx = liveTeammate(ctx.attackerBase + 5); // Use winger index as passer
+                    m_ballCarrierIdx = m_attackWingerIdx;
 
                     int userPosIdx = 3;
                     int myDefenderIdx = (m_engine->isHome() ? 0 : 11) + userPosIdx;
@@ -483,8 +617,8 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_attackPhase = Beat::MidTackleChase;
                     m_stateTimer = 0.f;
                     int options[] = {7, 8, 9, 10};
-                    m_ballCarrierIdx = ctx.attackerBase + options[rand() % 4];
-                    m_attackFwdIdx = ctx.attackerBase + 10;
+                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + options[rand() % 4]);
+                    m_attackFwdIdx = liveTeammate(ctx.attackerBase + 10);
                     m_ballTarget = m_dots[m_ballCarrierIdx].shape.getPosition(); // user will sprint here
                     return;
                 } else if (isMidfielderPassMinigame) {
@@ -501,12 +635,13 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
 
                         int myBase = m_engine->isHome() ? 0 : 11;
                         if (rand() % 100 < 50) {
-                            m_attackFwdIdx = myBase + 9 + (rand() % 2); // Forward
-                            m_attackType = 2; // Forward pass
+                            m_attackFwdIdx = liveTeammate(myBase + 9 + (rand() % 2)); // Forward
+                            m_passForward = true;
                         } else {
-                            m_attackFwdIdx = myBase + 2 + (rand() % 6); // Defs/Mids
-                            if (m_attackFwdIdx == myBase + 7) m_attackFwdIdx = myBase + 8; // Avoid self
-                            m_attackType = 3; // Backward/Sideways pass
+                            int t = myBase + 2 + (rand() % 6); // Defs/Mids
+                            if (t == myBase + 7) t = myBase + 8; // Avoid self
+                            m_attackFwdIdx = liveTeammate(t);
+                            m_passForward = false; // sideways/back
                         }
 
                         m_attackWingerIdx = 1 + (rand() % 2); // Store number of defenders to run (1 or 2)
@@ -514,16 +649,19 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     return;
                 }
 
-                if (m_attackType == 0) { // Wing Attack
+                // Attacking third X for whichever side is going forward.
+                float boxX = m_pendingEvent.isHome ? 700.f : 180.f;
+                float deepX = m_pendingEvent.isHome ? 470.f : 410.f; // just past halfway
+
+                if (m_attackShape == AttackShape::WingCross) {
                     m_ballCarrierIdx = m_attackWingerIdx;
-                    m_dots[m_attackWingerIdx].targetPos = m_pendingEvent.isHome ? sf::Vector2f(700.f, m_attackWingerIdx%11==5 ? 160.f : 420.f) : sf::Vector2f(180.f, m_attackWingerIdx%11==5 ? 160.f : 420.f);
+                    m_dots[m_attackWingerIdx].targetPos = sf::Vector2f(boxX, m_attackWingerIdx%11==5 ? 160.f : 420.f);
 
                     // Send the striker into the box *now*, while the winger is still carrying
                     // the ball. He used to only set off at the moment of the cross - but the
                     // ball travels at 500/s and he runs at 150/s, so it landed on the spot
                     // and hung there in mid-air waiting for him to catch up.
-                    sf::Vector2f crossTarget = m_pendingEvent.isHome ? sf::Vector2f(700.f, m_shotTargetY)
-                                                                     : sf::Vector2f(180.f, m_shotTargetY);
+                    sf::Vector2f crossTarget(boxX, m_shotTargetY);
                     m_dots[m_attackFwdIdx].targetPos = crossTarget;
 
                     sf::Vector2f fwdPos = m_dots[m_attackFwdIdx].shape.getPosition();
@@ -537,14 +675,50 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                         m_ballCarrierIdx = -1; // Release ball for cross
                         m_ballTarget = crossTarget;
                     }
-                } else if (m_attackType == 1) { // Solo Run
-                    m_ballCarrierIdx = ctx.attackerBase + 7;
-                    m_dots[m_ballCarrierIdx].targetPos = m_pendingEvent.isHome ? sf::Vector2f(720.f, m_shotTargetY) : sf::Vector2f(160.f, m_shotTargetY);
+                } else if (m_attackShape == AttackShape::SoloRun) {
+                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(boxX + (m_pendingEvent.isHome ? 20.f : -20.f), m_shotTargetY);
                     m_dots[m_ballCarrierIdx].speed = 180.f; // Faster run!
                     if (m_stateTimer > 1.5f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
-                } else { // Center Attack
+                } else if (m_attackShape == AttackShape::Counter) {
+                    // Fast direct break: the carrier starts deep and sprints at goal with
+                    // no build-up. Fewer defenders get back (numDefendersToRun is trimmed
+                    // in the dispatcher for this shape), so it's a genuine fast break.
+                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 9);
+                    m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(boxX, m_shotTargetY);
+                    m_dots[m_ballCarrierIdx].speed = 230.f; // quicker than a solo run
+                    if (m_stateTimer > 1.2f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
+                } else if (m_attackShape == AttackShape::ThroughBall) {
+                    // A pass slid in behind the defense: a deep carrier holds it while the
+                    // striker peels off, then the ball is released into space for him to run
+                    // onto. Reuses the cross-flight beat to carry the ball and meet the man.
+                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(deepX, m_shotTargetY);
+
+                    sf::Vector2f runTarget(boxX, m_shotTargetY);
+                    m_dots[m_attackFwdIdx].targetPos = runTarget;
+                    m_dots[m_attackFwdIdx].speed = 200.f; // making the run
+
+                    sf::Vector2f fwdPos = m_dots[m_attackFwdIdx].shape.getPosition();
+                    float fwdToTarget = std::hypot(fwdPos.x - runTarget.x, fwdPos.y - runTarget.y);
+                    if (m_stateTimer > 0.8f && (fwdToTarget < 90.f || m_stateTimer > 3.0f)) {
+                        m_attackPhase = Beat::CrossInFlight;
+                        m_stateTimer = 0.f;
+                        m_ballCarrierIdx = -1; // slide it into space
+                        m_ballTarget = runTarget;
+                    }
+                } else if (m_attackShape == AttackShape::LongShot) {
+                    // A crack from distance: the carrier steadies himself in a deep position
+                    // and lets fly without approaching the box. m_shotTargetY was set at the
+                    // goal mouth; keep the carrier deep so runShotResolution fires from range
+                    // (where the keeper-save and distance-scatter make it a real gamble).
+                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(deepX, m_shotTargetY);
+                    m_dots[m_ballCarrierIdx].speed = 120.f;
+                    if (m_stateTimer > 1.0f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
+                } else { // CenterAttack
                     m_ballCarrierIdx = m_attackFwdIdx;
-                    float attackX = m_pendingEvent.isHome ? (700.f + (rand()%20 - 10.f)) : (180.f + (rand()%20 - 10.f));
+                    float attackX = boxX + (rand()%20 - 10.f);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(attackX, m_shotTargetY);
                     if (m_stateTimer > 1.5f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
                 }
@@ -790,7 +964,7 @@ void MatchScreen::runMidfielderPass(float dt, const EpisodeCtx& ctx) {
                 // Ball traveling to Forward
                 float dist = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y);
                 if (dist < 10.f) {
-                    if (m_attackType == 3) {
+                    if (!m_passForward) {
                         m_attackPhase = Beat::PassReceived;
                         m_stateTimer = 0.f;
                         m_ballCarrierIdx = m_attackFwdIdx; // Receiver gets the ball
@@ -815,7 +989,7 @@ void MatchScreen::runMidfielderPass(float dt, const EpisodeCtx& ctx) {
     } else if (m_attackPhase == Beat::PassReceived) {
                 // Receiver gets the ball
                 if (m_stateTimer > 0.5f) {
-                    if (m_attackType == 3) {
+                    if (!m_passForward) {
                         // Backward/Sideways pass: no shot, just commit and normal play
                         m_engine->commitEvent(m_pendingEvent);
                         m_visibleLogs.push_back(m_pendingEvent);

@@ -33,6 +33,26 @@ bool MatchScreen::hasRedCard(int globalIdx) const {
     return false;
 }
 
+int MatchScreen::liveTeammate(int idx) const {
+    if (idx < 0 || idx >= (int)m_dots.size()) return idx;
+    if (!hasRedCard(idx)) return idx;
+
+    // Sent off: hand the ball to the closest team-mate still on the pitch. Keep the
+    // keeper out of it (base index) unless there's literally no one else.
+    int base = (idx < 11) ? 0 : 11;
+    sf::Vector2f from = m_dots[idx].shape.getPosition();
+    int best = -1;
+    float bestDist = 1e9f;
+    for (int i = base; i < base + 11; ++i) {
+        if (i == idx || i % 11 == 0) continue;
+        if (hasRedCard(i)) continue;
+        sf::Vector2f d = m_dots[i].shape.getPosition() - from;
+        float dd = std::hypot(d.x, d.y);
+        if (dd < bestDist) { bestDist = dd; best = i; }
+    }
+    return best >= 0 ? best : base; // fall back to the keeper only if nobody else is up
+}
+
 void MatchScreen::init() {
     Player* p = m_gameManager->getPlayer();
     
@@ -418,7 +438,7 @@ void MatchScreen::update(sf::Time deltaTime) {
             m_engine->commitEvent(m_pendingEvent);
             m_visibleLogs.push_back(m_pendingEvent);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
-            setupFreeKick(m_pendingEvent.isHome);
+            beginFoul(m_pendingEvent.isHome);
             updateVisuals(deltaTime);
             return;
         }
@@ -494,17 +514,20 @@ void MatchScreen::update(sf::Time deltaTime) {
                 m_visualState = VisualState::Attacking;
                 m_attackPhase = Beat::Setup;
                 m_stateTimer = 0.f;
-                m_attackType = rand() % 3; // Choose 0 (Wing), 1 (Solo), 2 (Center)
+                m_attackShape = pickAttackShape(m_pendingEvent.isHome);
                 int attackerBase = m_pendingEvent.isHome ? 0 : 11;
-                m_attackWingerIdx = attackerBase + ((rand()%2==0)?5:8);
+                m_attackWingerIdx = liveTeammate(attackerBase + ((rand()%2==0)?5:8));
                 int options[] = {9, 10};
-                m_attackFwdIdx = attackerBase + options[rand() % 2];
-                
+                m_attackFwdIdx = liveTeammate(attackerBase + options[rand() % 2]);
+
                 Player* p = m_gameManager->getPlayer();
                 if (p && p->position == PlayerPosition::Forward && m_pendingEvent.isHome == m_engine->isHome()) {
-                    m_attackFwdIdx = attackerBase + 10;
-                    if (m_pendingEvent.type == EventType::PendingMinigame && m_attackType == 1) {
-                        m_attackType = (rand() % 2 == 0) ? 0 : 2;
+                    m_attackFwdIdx = liveTeammate(attackerBase + 10);
+                    // The user is the forward: a Solo run has the *midfielder* carry the
+                    // ball, which would leave the user watching. Swap it for a shape that
+                    // actually feeds him - a cross to meet or a ball played into the box.
+                    if (m_pendingEvent.type == EventType::PendingMinigame && m_attackShape == AttackShape::SoloRun) {
+                        m_attackShape = (rand() % 2 == 0) ? AttackShape::WingCross : AttackShape::CenterAttack;
                     }
                 }
                 
@@ -515,10 +538,9 @@ void MatchScreen::update(sf::Time deltaTime) {
                 if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
 
                 if (m_pendingEvent.type == EventType::Card || m_pendingEvent.type == EventType::Foul) {
-                    // Play is dead. The ball used to just keep whatever velocity it had
-                    // when the foul was given and sail off across the pitch; instead it
-                    // sits at the spot and the fouled side restarts it.
-                    setupFreeKick(m_pendingEvent.isHome);
+                    // Show the challenge, then settle into the dead ball. The ball used to
+                    // just keep whatever velocity it had and sail off across the pitch.
+                    beginFoul(m_pendingEvent.isHome);
                 } else {
                     m_visualState = VisualState::NormalPlay;
                     m_stateTimer = 0.f;
@@ -1109,6 +1131,30 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     if (bPos.y > 250.f && bPos.y < 330.f) {
         if (bPos.x < 50.f || bPos.x > 830.f) {
             bool success = (bPos.x < 50.f) ? !m_engine->isHome() : m_engine->isHome();
+
+            // The opponent keeper gets a chance to save a shot on target. Until now the
+            // ball simply crossed the line - the keeper was a frozen dot the shot flew
+            // straight through, so a shot the QTE placed on target was an automatic goal
+            // no matter how well the keeper was set or how far out you struck it. A shot
+            // tucked into the corner still mostly beats him; a central one he often stops.
+            if (success && m_pendingKind == MinigameActionKind::Shot) {
+                int gkStrength = m_engine->getOpponentClub() ? m_engine->getOpponentClub()->strength : 65;
+                float centrality = std::clamp(1.f - std::abs(m_shotTargetY - 290.f) / 40.f, 0.f, 1.f);
+                // Base reach from the keeper's quality, then mostly only for central shots.
+                float base = (gkStrength - 30) * 0.8f;                 // str 50->16, 90->48
+                float saveChance = base * (0.35f + 0.65f * centrality); // corner ~35% of base
+                saveChance -= m_qteAccuracy * 12.f;                     // a cleaner strike is harder to stop
+                saveChance = std::clamp(saveChance, 4.f, 70.f);
+                if ((rand() % 100) < (int)saveChance) {
+                    success = false; // saved - not a goal
+                    // Park the ball at the keeper so it visibly stops there instead of
+                    // rippling the net.
+                    int gkIdx = (bPos.x < 50.f) ? 0 : 11;
+                    m_visualBall.setPosition(m_dots[gkIdx].shape.getPosition());
+                    m_ballVelocity = sf::Vector2f(0.f, 0.f);
+                }
+            }
+
             Player* p = m_gameManager->getPlayer();
             MinigameActionKind kind = (p->position == PlayerPosition::Goalkeeper) ? MinigameActionKind::Save
                                      : (p->position == PlayerPosition::Defender) ? MinigameActionKind::Tackle
