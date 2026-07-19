@@ -68,11 +68,7 @@ void SettingsScreen::updateDifficultyText() {
 }
 
 void SettingsScreen::updateSpeedText() {
-    std::string speedStr = "Normal";
-    if (g_settings.matchSpeed == 0) speedStr = "Slow";
-    if (g_settings.matchSpeed == 2) speedStr = "Fast";
-    if (g_settings.matchSpeed == 3) speedStr = "Instant";
-    m_speedText.setString("Current Match Speed: " + speedStr);
+    m_speedText.setString(std::string("Current Match Speed: ") + matchSpeedLabel(g_settings.matchSpeed));
 }
 
 void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
@@ -93,7 +89,7 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
                     g_settings.difficulty = (g_settings.difficulty + 1) % 3;
                     updateDifficultyText();
                 } else if (btn.action == "Change Match Speed") {
-                    g_settings.matchSpeed = (g_settings.matchSpeed + 1) % 4;
+                    g_settings.matchSpeed = (g_settings.matchSpeed + 1) % matchSpeedCount();
                     updateSpeedText();
                 } else if (btn.action == "Save Game") {
                     if (SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {

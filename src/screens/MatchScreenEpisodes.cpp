@@ -48,6 +48,71 @@ void MatchScreen::resetToKickoff() {
     m_dots[kickerIdx].shape.setPosition(m_dots[kickerIdx].targetPos);
 }
 
+void MatchScreen::updateAmbientShape() {
+    // Everyone not involved in whatever is happening used to just stand: the scripts only
+    // ever assign targets to their own participants, and the minigame AI parked the rest
+    // on the spot, so 16-odd players stood like statues through every episode.
+    //
+    // This gives every player a baseline target - his formation slot, slid along with the
+    // ball - so the shape breathes with the play. Targets are ABSOLUTE (formation slot +
+    // a shift derived from the ball's position), never "current position + delta", which
+    // is what previously turned into a treadmill that marched the whole side off the pitch.
+    //
+    // Callers run this FIRST; the scripts and minigame AI then overwrite the players they
+    // actually control.
+    static const float form[11][2] = {
+        {0.02f, 0.5f}, {0.2f, 0.2f}, {0.15f, 0.4f}, {0.15f, 0.6f}, {0.2f, 0.8f},
+        {0.45f, 0.2f}, {0.4f, 0.4f}, {0.4f, 0.6f}, {0.45f, 0.8f}, {0.7f, 0.35f}, {0.7f, 0.65f}
+    };
+
+    // During a minigame the ball is glued to the user's feet, so following it here would
+    // make the whole formation mirror his dribble. Anchor to the frozen episode position
+    // instead; in open play, follow the live ball.
+    sf::Vector2f ball = m_minigameActive ? m_ambientAnchor : m_visualBall.getPosition();
+    // The whole shape shuffles toward whichever end the ball is in.
+    float shift = (ball.x - 440.f) * 0.35f;
+
+    // A slow, per-player drift so players jockey independently instead of standing dead
+    // still once they reach their slot. Each dot has its own phase (via its index), so
+    // nobody moves in lockstep - and it's tiny, so the shape still reads as a formation.
+    static float s_ambientClock = 0.f;
+    s_ambientClock += 1.f / 60.f;
+
+    for (int team = 0; team < 2; ++team) {
+        int base = team * 11;
+        for (int i = 0; i < 11; ++i) {
+            int idx = base + i;
+            if (hasRedCard(idx)) continue;
+            // Never drag whoever has the ball back to his slot - he's doing something.
+            // (Notably the kick-off taker, whose target is set once and would otherwise be
+            // clobbered here, pulling him off the centre spot.)
+            if (idx == m_ballCarrierIdx) continue;
+            // The user drives his own dot; don't fight him for it.
+            if (m_minigameActive && idx == m_userIdx) continue;
+
+            if (i == 0) { // keeper: hold the line, track the ball's height
+                m_dots[idx].targetPos = sf::Vector2f(team == 0 ? 70.f : 810.f,
+                                                     std::clamp(ball.y, 240.f, 340.f));
+                m_dots[idx].speed = 80.f;
+                continue;
+            }
+
+            float slotX = (team == 0) ? std::min(50.f + form[i][0] * 780.f, 435.f)
+                                      : std::max(830.f - form[i][0] * 780.f, 445.f);
+            float slotY = 140.f + form[i][1] * 300.f;
+
+            float driftX = std::sin(s_ambientClock * 0.9f + idx * 1.3f) * 9.f;
+            float driftY = std::cos(s_ambientClock * 0.7f + idx * 2.1f) * 9.f;
+
+            // Slide with the ball, and lean gently into the ball's channel so the side
+            // shuffles across rather than holding rigid lanes.
+            m_dots[idx].targetPos = sf::Vector2f(std::clamp(slotX + shift + driftX, 55.f, 815.f),
+                                                 slotY + (ball.y - slotY) * 0.15f + driftY);
+            m_dots[idx].speed = 55.f;
+        }
+    }
+}
+
 void MatchScreen::updateDotMotion(float dt) {
     // Steers every dot toward its targetPos. This used to sit at the tail of
     // updateVisuals(), which update() skips entirely while a minigame is running - so
@@ -67,12 +132,12 @@ void MatchScreen::updateDotMotion(float dt) {
         float len = std::hypot(dir.x, dir.y);
         if (len <= 0.f) continue;
 
-        float currentSpeed = d.speed;
-        if (!m_minigameActive && m_visualState == VisualState::Attacking) {
-            currentSpeed = 150.f; // Sprinting during a scripted attack
-        }
-
-        float moveDist = currentSpeed * dt;
+        // Each dot moves at its own speed. This used to force EVERY dot to 150 for the
+        // whole of the Attacking state, so the instant a script began all 22 players
+        // jumped from their ambient stroll (55) to a sprint - a very visible gear change
+        // on every transition. The scripts set their own participants' speeds; everyone
+        // else keeps the ambient pace, so the switch is invisible.
+        float moveDist = d.speed * dt;
         if (moveDist >= len) {
             d.shape.setPosition(d.targetPos);
         } else {
@@ -85,6 +150,10 @@ void MatchScreen::updateMinigameAI(float dt) {
     (void)dt;
     Player* p = m_gameManager->getPlayer();
     sf::Vector2f ballPos = m_visualBall.getPosition();
+
+    // Baseline shape for all 22 first; the pressers/runners/keepers below overwrite the
+    // few who are actually involved. Without this everyone else stands frozen.
+    updateAmbientShape();
 
     bool userIsHome = m_engine->isHome();
     int ownBase = userIsHome ? 0 : 11;
@@ -115,18 +184,13 @@ void MatchScreen::updateMinigameAI(float dt) {
     }
     std::sort(byDist.begin(), byDist.end());
 
-    for (size_t k = 0; k < byDist.size(); ++k) {
-        int idx = byDist[k].second;
-        if (userOnBall && k < 2) {
+    // Only the two nearest actually close the ball down, and only while we have it. The
+    // rest keep the ambient shape set above (they used to be parked on the spot here).
+    if (userOnBall) {
+        for (size_t k = 0; k < byDist.size() && k < 2; ++k) {
+            int idx = byDist[k].second;
             m_dots[idx].targetPos = ballPos; // press the ball
             m_dots[idx].speed = chaseSpeed;
-        } else {
-            // Hold a loose shape, drifting goal-side of the ball. When the user is
-            // defending, everyone holds - so the one man he's tackling is a stable target
-            // and no one else swoops in on the loose ball.
-            sf::Vector2f pos = m_dots[idx].shape.getPosition();
-            m_dots[idx].targetPos = sf::Vector2f(pos.x - attackDir * 8.f, pos.y);
-            m_dots[idx].speed = 60.f;
         }
     }
 
@@ -142,29 +206,21 @@ void MatchScreen::updateMinigameAI(float dt) {
     }
     std::sort(mates.begin(), mates.end());
 
-    for (size_t k = 0; k < mates.size(); ++k) {
+    // Two men break into space to give the pass somewhere to go; the rest keep the ambient
+    // shape. Anchor the run to the FROZEN episode position (m_ambientAnchor), not the live
+    // ball. The live ball is glued to the user's dribble, so keying the run off it made the
+    // supporting men shadow his every step - "everyone moves exactly like me". Off a fixed
+    // point they make one honest run into space and hold, independent of the user.
+    sf::Vector2f anchor = m_minigameActive ? m_ambientAnchor : ballPos;
+    for (size_t k = 0; k < mates.size() && k < 2; ++k) {
         int idx = mates[k].second;
         sf::Vector2f pos = m_dots[idx].shape.getPosition();
-        if (k < 2) {
-            // Break forward into space, fanning slightly wide of the ball.
-            float wide = (pos.y < ballPos.y) ? -35.f : 35.f;
-            m_dots[idx].targetPos = sf::Vector2f(pos.x + attackDir * 90.f, pos.y + wide);
-            m_dots[idx].speed = 110.f;
-        } else {
-            m_dots[idx].targetPos = sf::Vector2f(pos.x + attackDir * 15.f, pos.y);
-            m_dots[idx].speed = 60.f;
-        }
+        float wide = (pos.y < anchor.y) ? -45.f : 45.f;
+        m_dots[idx].targetPos = sf::Vector2f(anchor.x + attackDir * (100.f + k * 40.f), anchor.y + wide);
+        m_dots[idx].speed = 110.f;
     }
 
-    // --- Keepers: stay on the line, track the ball's height.
-    for (int base : {0, 11}) {
-        int gk = base;
-        if (gk == m_userIdx) continue; // the user's own keeper minigame drives this dot
-        float lineX = (base == 0) ? 70.f : 810.f;
-        float y = std::clamp(ballPos.y, 240.f, 340.f);
-        m_dots[gk].targetPos = sf::Vector2f(lineX, y);
-        m_dots[gk].speed = 90.f;
-    }
+    // (Keepers are handled by updateAmbientShape above - line-holding, tracking the ball.)
 
     // --- Pressure: an opponent who reaches the ball while WE have it wins it back
     // (userOnBall computed above). When he's defending (Tackle/Save) the opponent already
@@ -203,8 +259,17 @@ void MatchScreen::updateMinigameAI(float dt) {
     duel = std::clamp(duel, 8, 55);
     if ((rand() % 100) >= duel) return;
 
+    // Robbed by a closing opponent while dwelling on the ball - a turnover, so the log
+    // reads "robbed of possession" instead of "missed a golden opportunity". Hand the ball
+    // to the man who won it and snap it to his feet, so it doesn't fly across the pitch to
+    // reach him once open play resumes. byDist excludes keepers, so this is an outfielder.
+    int winner = byDist[0].second;
     m_qteAccuracy = 0.f;
-    m_engine->processMinigameResult(buildMinigameResult(false, m_pendingKind, m_pendingVariant));
+    m_ballVelocity = sf::Vector2f(0.f, 0.f);
+    m_ballCarrierIdx = winner;
+    m_visualBall.setPosition(m_dots[winner].shape.getPosition());
+    m_ballTarget = m_dots[winner].shape.getPosition();
+    m_engine->processMinigameResult(buildMinigameResult(false, m_pendingKind, ActionVariant::Dispossessed));
     endMinigame();
 }
 
@@ -239,6 +304,21 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
     };
     m_foulOffenderIdx = nearest(offBase);
     m_foulVictimIdx = nearest(vicBase);
+
+    // Work out the challenge geometry ONCE, here. Doing it per frame in the
+    // FoulChallenge branch meant the victim's "stagger away" target was recomputed from
+    // his own latest position every frame, so it kept retreating and he fled forever with
+    // the offender chasing him - both ended up miles from the ball.
+    if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
+        sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
+        sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
+        sf::Vector2f away = vicPos - offPos;
+        float len = std::hypot(away.x, away.y);
+        if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
+
+        m_foulLungeTarget = vicPos;                 // offender goes through the man
+        m_foulStaggerTarget = vicPos + away * 26.f; // victim is knocked this far and stops
+    }
 
     m_visualState = VisualState::FoulChallenge;
     m_stateTimer = 0.f;
@@ -292,22 +372,28 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
 
 void MatchScreen::updateVisuals(sf::Time deltaTime) {
     float dt = deltaTime.asSeconds();
-    
-    float animSpeedMult = 1.0f;
-    if (g_settings.matchSpeed == 2) animSpeedMult = 2.0f;
-    if (g_settings.matchSpeed == 3) animSpeedMult = 8.0f;
-    
-    dt *= animSpeedMult;
+
+    // Scripts/animation run at the chosen multiplier (0.5x..2.5x). Previously only Fast
+    // (2x) and Instant (8x!) were handled - the latter is why scripts were a blur.
+    dt *= matchSpeedMult(g_settings.matchSpeed);
     
     m_stateTimer += dt;
     float mom = 0.0f;
     if (!m_engine->getMomentumHistory().empty()) mom = m_engine->getMomentumHistory().back();
-    
+
+    // Give everyone a living baseline before the scripts run - the scripts below then
+    // overwrite their own participants. Skipped at kick-off, where the sides are already
+    // placed on their marks and shouldn't wander. Without this, every player not named by
+    // the current script simply stood still for the whole episode.
+    if (m_visualState != VisualState::Kickoff) {
+        updateAmbientShape();
+    }
+
     float form[11][2] = {
         {0.02f, 0.5f}, {0.2f, 0.2f}, {0.15f, 0.4f}, {0.15f, 0.6f}, {0.2f, 0.8f},
         {0.45f, 0.2f}, {0.4f, 0.4f}, {0.4f, 0.6f}, {0.45f, 0.8f}, {0.7f, 0.35f}, {0.7f, 0.65f}
     };
-    
+
     if (m_visualState == VisualState::Kickoff) {
         if (m_stateTimer > 2.0f) {
             m_visualState = VisualState::NormalPlay;
@@ -354,8 +440,12 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             
             float swayX = std::sin(s_idleTime * 2.0f + i) * 6.0f;
             float swayY = std::cos(s_idleTime * 1.5f + i) * 6.0f;
-            
+
             m_dots[i].targetPos = sf::Vector2f(tx + swayX, ty + swayY);
+            // Everyone strolls at the same pace here. Without this they kept whatever
+            // speed the last script gave them (a Counter carrier still on 230), so play
+            // resumed with players zipping back to their slots at sprint pace.
+            m_dots[i].speed = 55.f;
         }
         
         if (m_ballCarrierIdx == -1 || (rand() % 100 < 2 && std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y) < 10.f)) {
@@ -382,18 +472,13 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         m_ballCarrierIdx = -1;
         sf::Vector2f spot = m_visualBall.getPosition();
 
+        // Fixed targets from beginFoul - both men converge and stop, rather than the
+        // victim's target fleeing ahead of him every frame.
         if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
-            sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
-            // Offender charges into the victim.
-            m_dots[m_foulOffenderIdx].targetPos = vicPos;
-            m_dots[m_foulOffenderIdx].speed = 260.f;
-            // Victim is knocked back off the ball and staggers away from the offender.
-            sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
-            sf::Vector2f away = vicPos - offPos;
-            float len = std::hypot(away.x, away.y);
-            if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
-            m_dots[m_foulVictimIdx].targetPos = vicPos + away * 28.f;
-            m_dots[m_foulVictimIdx].speed = 90.f;
+            m_dots[m_foulOffenderIdx].targetPos = m_foulLungeTarget;
+            m_dots[m_foulOffenderIdx].speed = 150.f;
+            m_dots[m_foulVictimIdx].targetPos = m_foulStaggerTarget;
+            m_dots[m_foulVictimIdx].speed = 70.f;
         }
 
         // Keep the ball dead on the spot through the challenge.
@@ -413,6 +498,13 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
 
         bool takerReady = false;
         if (m_foulPlayerIdx >= 0 && m_foulPlayerIdx < (int)m_dots.size()) {
+            // Re-assert the taker's walk-up every frame. setupFreeKick sets it once, but
+            // updateAmbientShape now runs first and would drag him back to his formation
+            // slot - he'd never reach the ball, takerReady would never fire, and the 6s
+            // safety net would restart the ball with nobody near it.
+            m_dots[m_foulPlayerIdx].targetPos = m_visualBall.getPosition();
+            m_dots[m_foulPlayerIdx].speed = 120.f;
+
             sf::Vector2f d = m_dots[m_foulPlayerIdx].shape.getPosition() - m_visualBall.getPosition();
             takerReady = std::hypot(d.x, d.y) < 16.f;
         }
@@ -510,6 +602,7 @@ void MatchScreen::updateAttackEpisode(float dt) {
             float offsetX = m_pendingEvent.isHome ? (i * 15.f) : -(i * 15.f);
             float offsetY = (i%2==0) ? (i * 20.f) : -(i * 20.f);
             m_dots[ctx.defenderBase + i].targetPos = sf::Vector2f(carrierPos.x + offsetX, carrierPos.y + offsetY);
+            m_dots[ctx.defenderBase + i].speed = 150.f; // tracking runners
         }
     }
 }
@@ -656,6 +749,7 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                 if (m_attackShape == AttackShape::WingCross) {
                     m_ballCarrierIdx = m_attackWingerIdx;
                     m_dots[m_attackWingerIdx].targetPos = sf::Vector2f(boxX, m_attackWingerIdx%11==5 ? 160.f : 420.f);
+                    m_dots[m_attackWingerIdx].speed = 150.f;
 
                     // Send the striker into the box *now*, while the winger is still carrying
                     // the ball. He used to only set off at the moment of the cross - but the
@@ -663,6 +757,7 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     // and hung there in mid-air waiting for him to catch up.
                     sf::Vector2f crossTarget(boxX, m_shotTargetY);
                     m_dots[m_attackFwdIdx].targetPos = crossTarget;
+                    m_dots[m_attackFwdIdx].speed = 150.f;
 
                     sf::Vector2f fwdPos = m_dots[m_attackFwdIdx].shape.getPosition();
                     float fwdToTarget = std::hypot(fwdPos.x - crossTarget.x, fwdPos.y - crossTarget.y);
@@ -676,7 +771,10 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                         m_ballTarget = crossTarget;
                     }
                 } else if (m_attackShape == AttackShape::SoloRun) {
-                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    // Start from whoever is already closest to the ball rather than a
+                    // fixed shirt number - otherwise the ball visibly flies across the
+                    // pitch to him and the episode reads as a hard cut from normal play.
+                    m_ballCarrierIdx = nearestToBall(ctx.attackerBase);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(boxX + (m_pendingEvent.isHome ? 20.f : -20.f), m_shotTargetY);
                     m_dots[m_ballCarrierIdx].speed = 180.f; // Faster run!
                     if (m_stateTimer > 1.5f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
@@ -684,7 +782,7 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     // Fast direct break: the carrier starts deep and sprints at goal with
                     // no build-up. Fewer defenders get back (numDefendersToRun is trimmed
                     // in the dispatcher for this shape), so it's a genuine fast break.
-                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 9);
+                    m_ballCarrierIdx = nearestToBall(ctx.attackerBase);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(boxX, m_shotTargetY);
                     m_dots[m_ballCarrierIdx].speed = 230.f; // quicker than a solo run
                     if (m_stateTimer > 1.2f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
@@ -692,8 +790,9 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     // A pass slid in behind the defense: a deep carrier holds it while the
                     // striker peels off, then the ball is released into space for him to run
                     // onto. Reuses the cross-flight beat to carry the ball and meet the man.
-                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    m_ballCarrierIdx = nearestToBall(ctx.attackerBase);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(deepX, m_shotTargetY);
+                    m_dots[m_ballCarrierIdx].speed = 140.f;
 
                     sf::Vector2f runTarget(boxX, m_shotTargetY);
                     m_dots[m_attackFwdIdx].targetPos = runTarget;
@@ -712,7 +811,7 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     // and lets fly without approaching the box. m_shotTargetY was set at the
                     // goal mouth; keep the carrier deep so runShotResolution fires from range
                     // (where the keeper-save and distance-scatter make it a real gamble).
-                    m_ballCarrierIdx = liveTeammate(ctx.attackerBase + 7);
+                    m_ballCarrierIdx = nearestToBall(ctx.attackerBase);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(deepX, m_shotTargetY);
                     m_dots[m_ballCarrierIdx].speed = 120.f;
                     if (m_stateTimer > 1.0f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
@@ -720,6 +819,7 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_ballCarrierIdx = m_attackFwdIdx;
                     float attackX = boxX + (rand()%20 - 10.f);
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(attackX, m_shotTargetY);
+                    m_dots[m_ballCarrierIdx].speed = 150.f;
                     if (m_stateTimer > 1.5f) { m_attackPhase = Beat::Shot; m_stateTimer = 0.f; }
                 }
     }
@@ -731,6 +831,7 @@ void MatchScreen::runWingCross(float dt, const EpisodeCtx& ctx) {
                 // Phase 1: the cross is in the air.
                 m_ballCarrierIdx = -1;
                 m_dots[m_attackFwdIdx].targetPos = m_ballTarget;
+                m_dots[m_attackFwdIdx].speed = 160.f; // attacking the cross
 
                 // Resolve as soon as the ball lands. This used to also demand the striker be
                 // standing on the exact spot, which is what left the ball hanging motionless
@@ -885,6 +986,7 @@ void MatchScreen::runShotResolution(float dt, const EpisodeCtx& ctx) {
                         m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(860.f, targetY > 290.f ? 360.f : 220.f) : sf::Vector2f(20.f, targetY > 290.f ? 360.f : 220.f);
                         m_dots[ctx.defenderBase].targetPos = m_pendingEvent.isHome ? sf::Vector2f(810.f, 290.f) : sf::Vector2f(70.f, 290.f);
                     }
+                    m_dots[ctx.defenderBase].speed = 190.f; // keeper reacting to the strike
 
                     if (ctx.isSave) {
                         float distToTarget = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y);
@@ -929,9 +1031,13 @@ void MatchScreen::runMidfielderPass(float dt, const EpisodeCtx& ctx) {
                 // Midfielder Attacking: carry the ball into space before the pass/shot decision.
                 // (Standing still here used to leave the interactive minigame starting at
                 // midfield with every other dot frozen - an open, undefended dribble to goal.)
+                // Absolute destination, not "current + 150" recomputed per frame: the
+                // clamp made that terminate at the same spot anyway, but as written it was
+                // another creeping target.
                 sf::Vector2f curPos = m_dots[m_ballCarrierIdx].shape.getPosition();
-                float advanceX = m_engine->isHome() ? std::min(curPos.x + 150.f, 650.f) : std::max(curPos.x - 150.f, 230.f);
+                float advanceX = m_engine->isHome() ? 650.f : 230.f;
                 m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(advanceX, curPos.y);
+                m_dots[m_ballCarrierIdx].speed = 140.f;
                 if (m_stateTimer > 1.0f && !m_minigameActive) {
                     m_stateTimer = 0.f;
                     m_engine->triggerMinigame();
@@ -1085,15 +1191,25 @@ void MatchScreen::runSoloRun(float dt, const EpisodeCtx& ctx) {
 void MatchScreen::runGoalkeeperSave(float dt, const EpisodeCtx& ctx) {
     (void)dt; (void)ctx;
     if (m_attackPhase == Beat::GkShotWindup) {
-                // Goalkeeper Save: attacker winds up, then strikes toward goal.
-                // Start zooming toward our own goal now, during the wind-up, so the camera
-                // is already framed there once the shot is struck - instead of chasing the
-                // ball's position from wherever it happens to start (which could be nowhere
-                // near the keeper yet).
+                // Goalkeeper Save: show the striker actually bearing down on goal and
+                // shooting, instead of the camera snapping to the goal while the ball
+                // teleported to the edge of the box. The attacker keeps the ball at his
+                // feet here and drives toward a shooting spot; when he arrives (or the beat
+                // ends) the shot is struck from HIS position in initMinigame.
                 bool userIsHome = m_engine->isHome();
-                sf::Vector2f goalArea(userIsHome ? 90.f : 790.f, m_shotTargetY);
+                float shootX = userIsHome ? 250.f : 630.f; // just outside the box we defend
+                sf::Vector2f shootPos(shootX, m_shotTargetY);
 
-                float targetZoom = 0.5f;
+                if (m_attackFwdIdx >= 0) {
+                    m_dots[m_attackFwdIdx].targetPos = shootPos;
+                    m_dots[m_attackFwdIdx].speed = 170.f; // driving at goal
+                    m_ballCarrierIdx = m_attackFwdIdx;     // ball at his feet through the run
+                }
+
+                // Camera follows the attacker as he comes in, so the build-up is visible.
+                sf::Vector2f focus = (m_attackFwdIdx >= 0) ? m_dots[m_attackFwdIdx].shape.getPosition()
+                                                           : shootPos;
+                float targetZoom = 0.6f;
                 m_currentZoom += (targetZoom - m_currentZoom) * 3.0f * dt;
                 float viewWidth = 1280.f * m_currentZoom;
                 float viewHeight = 720.f * m_currentZoom;
@@ -1101,7 +1217,7 @@ void MatchScreen::runGoalkeeperSave(float dt, const EpisodeCtx& ctx) {
                 float maxX = 840.f - viewWidth / 2.f;
                 float minY = 130.f + viewHeight / 2.f;
                 float maxY = 450.f - viewHeight / 2.f;
-                sf::Vector2f targetCenter = goalArea;
+                sf::Vector2f targetCenter = focus;
                 targetCenter.x = (minX > maxX) ? 440.f : std::clamp(targetCenter.x, minX, maxX);
                 targetCenter.y = (minY > maxY) ? 290.f : std::clamp(targetCenter.y, minY, maxY);
                 sf::Vector2f currentCenter = m_camera.getCenter();
@@ -1109,10 +1225,18 @@ void MatchScreen::runGoalkeeperSave(float dt, const EpisodeCtx& ctx) {
                 m_camera.setCenter(currentCenter);
                 m_camera.setSize(1280.f * m_currentZoom, 720.f * m_currentZoom);
 
-                if (m_stateTimer > 0.5f && !m_minigameActive) {
-                    m_stateTimer = 0.f;
-                    m_ballCarrierIdx = -1;
-                    m_engine->triggerMinigame();
+                // Strike once he's arrived at the shooting spot, or after a short beat as a
+                // safety net. Long enough that the run reads as a run.
+                float distToShoot = (m_attackFwdIdx >= 0)
+                    ? std::hypot(m_dots[m_attackFwdIdx].shape.getPosition().x - shootPos.x,
+                                 m_dots[m_attackFwdIdx].shape.getPosition().y - shootPos.y)
+                    : 0.f;
+                if ((distToShoot < 25.f && m_stateTimer > 0.6f) || m_stateTimer > 1.8f) {
+                    if (!m_minigameActive) {
+                        m_stateTimer = 0.f;
+                        m_ballCarrierIdx = -1;
+                        m_engine->triggerMinigame();
+                    }
                 }
     }
 }

@@ -16,13 +16,16 @@ void TimingBar::start(int stat, bool hardMode, float sweeps) {
     // Better stat -> wider sweet spot and slower marker. Mirrors the difficulty
     // curve already used by the shooting drill in TrainingScreen, where the bar
     // speed scales with (100 - stat).
-    m_perfectHalf = 0.06f + s * 0.09f;   // stat 1 -> ~0.06, stat 100 -> ~0.15
-    m_goodHalf = m_perfectHalf + 0.10f + s * 0.07f;
+    // Tightened from a very forgiving window (a Perfect used to be ~a quarter of the bar
+    // at mid stats) - hitting the sweet spot every time was part of why scoring was
+    // trivial. Still scales with the stat so a better player has a fairer target.
+    m_perfectHalf = 0.035f + s * 0.06f;  // stat 1 -> ~0.035, stat 100 -> ~0.095
+    m_goodHalf = m_perfectHalf + 0.08f + s * 0.06f;
 
     // The marker is deliberately unhurried: the skill is hitting the zone, not
     // having superhuman reflexes. The goalkeeper's flight time is tuned against
     // this in MatchScreen::initMinigame, so keep the ceiling in mind if changing it.
-    m_speed = 1.15f - s * 0.35f;         // stat 1 -> ~1.15 sweeps/s, stat 100 -> ~0.80
+    m_speed = 1.3f - s * 0.35f;          // stat 1 -> ~1.3 sweeps/s, stat 100 -> ~0.95
 
     if (hardMode) {
         m_perfectHalf *= 0.6f;

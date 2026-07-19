@@ -65,7 +65,8 @@ enum class ActionVariant {
     Finesse,
     Lofted,
     Slide,
-    Dive
+    Dive,
+    Dispossessed // ball lost without an attempt (idle / robbed) - a turnover, not a miss
 };
 
 struct MinigameResult {

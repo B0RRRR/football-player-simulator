@@ -86,6 +86,10 @@ private:
     // but his dot still exists, so a cross/pass aimed at him sent the ball drifting to
     // an empty spot ("bouncing off the air").
     int liveTeammate(int idx) const;
+    // The live outfield player of `base`'s team standing closest to the ball right now.
+    // Used to start an episode from wherever the ball already is, instead of handing it
+    // to a fixed shirt number on the far side of the pitch.
+    int nearestToBall(int base) const;
     void updateVisuals(sf::Time deltaTime);
     void resetToKickoff();
     MinigameResult buildMinigameResult(bool success, MinigameActionKind kind, ActionVariant variant = ActionVariant::Default) const;
@@ -136,6 +140,10 @@ private:
 
     // Steers all dots toward their targets. Runs in normal play AND during a minigame.
     void updateDotMotion(float dt);
+    // Baseline "living shape" for everyone: each player's formation slot, slid with the
+    // ball. Runs before the scripts/minigame AI, which then overwrite whoever is actually
+    // involved - so uninvolved players drift with the play instead of standing frozen.
+    void updateAmbientShape();
     // Gives the other 21 players something to do while a minigame runs: opponents press
     // the ball, team-mates make runs, keepers hold their line. Without this they stand
     // still, because the episode scripts don't tick during a minigame.
@@ -167,6 +175,11 @@ private:
     int m_foulVictimIdx = -1;
     int m_foulOffenderIdx = -1;      // who committed the foul (shown lunging in)
     bool m_foulOffenderIsHome = true; // remembered across the challenge -> free kick
+    // Fixed once when the foul is given. Recomputing these per frame made the victim's
+    // target run 28px further away every frame - a treadmill that sent both players
+    // sprinting off across the pitch.
+    sf::Vector2f m_foulLungeTarget;   // where the offender lunges to
+    sf::Vector2f m_foulStaggerTarget; // where the victim is knocked to
     
     std::vector<MatchEvent> m_visibleLogs;
     std::vector<sf::RectangleShape> m_momentumBars;
@@ -194,7 +207,16 @@ private:
     Beat m_attackPhase = Beat::Setup;
     
     float m_simTimer;
-    
+
+    // Scoreboard clock, in fractional minutes. PURELY COSMETIC - the engine's m_minute
+    // still drives everything (chance rolls, full time, the scheduled injury/red-card
+    // minutes), so this changes nothing about how often chances happen.
+    // The engine's minute is frozen for the whole of a scripted episode or minigame, so
+    // the board used to sit on a static "43'" for seconds at a time. This ticks in real
+    // time in every state and is clamped to [m_minute, m_minute + 0.95], so it always
+    // moves but can never run ahead of the engine or lie about full time.
+    float m_displayTime = 0.f;
+
     // Minigame Elements (Tactical Episode)
     bool m_minigameActive;
     float m_minigameTimer;
@@ -210,6 +232,10 @@ private:
     // struck shot at the keeper uses a much lower value so it flies straight and true
     // instead of decaying to a crawl before it reaches the line.
     float m_ballFriction = 1.5f;
+    // Where the ambient formation anchors during a minigame. Frozen at the episode's
+    // start so the shape doesn't slide around with the user-controlled ball - otherwise
+    // every player mirrors the user's dribble.
+    sf::Vector2f m_ambientAnchor;
     
     // Player Controls
     sf::Vector2f m_userMoveDir;

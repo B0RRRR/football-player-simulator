@@ -7,6 +7,7 @@
 #include "UITheme.h"
 #include <iostream>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <algorithm>
 #include <vector>
@@ -17,8 +18,14 @@ bool MatchScreen::hasRedCard(int globalIdx) const {
     if (!m_engine) return false;
     int localIdx = globalIdx % 11;
     bool isHomeTeam = (globalIdx < 11);
-    int userPosIdx = (int)m_gameManager->getPlayer()->position - 1;
-    
+    // The user's own dot sits at a fixed local index per position (GK 0, Def 3, Mid 7,
+    // Fwd 10) - the same mapping initMinigame and the draw loop use. `position - 1` gave
+    // 0/1/2, so a user red card (-1) removed the wrong dot.
+    PlayerPosition up = m_gameManager->getPlayer()->position;
+    int userPosIdx = (up == PlayerPosition::Defender) ? 3
+                   : (up == PlayerPosition::Midfielder) ? 7
+                   : (up == PlayerPosition::Forward) ? 10 : 0;
+
     if (isHomeTeam) {
         for (int r : m_engine->getHomeRedCards()) {
             if (r == -1 && localIdx == userPosIdx && m_engine->isHome()) return true;
@@ -51,6 +58,20 @@ int MatchScreen::liveTeammate(int idx) const {
         if (dd < bestDist) { bestDist = dd; best = i; }
     }
     return best >= 0 ? best : base; // fall back to the keeper only if nobody else is up
+}
+
+int MatchScreen::nearestToBall(int base) const {
+    sf::Vector2f ball = m_visualBall.getPosition();
+    int best = -1;
+    float bestDist = 1e9f;
+    for (int i = base; i < base + 11; ++i) {
+        if (i % 11 == 0) continue; // not the keeper
+        if (hasRedCard(i)) continue;
+        sf::Vector2f d = m_dots[i].shape.getPosition() - ball;
+        float dd = std::hypot(d.x, d.y);
+        if (dd < bestDist) { bestDist = dd; best = i; }
+    }
+    return best >= 0 ? best : base;
 }
 
 void MatchScreen::init() {
@@ -160,23 +181,23 @@ void MatchScreen::init() {
     m_btnSkipText.setPosition(m_btnSkipRect.getPosition().x + m_btnSkipRect.getSize().x/2.0f,
                               m_btnSkipRect.getPosition().y + m_btnSkipRect.getSize().y/2.0f);
     
-    std::vector<std::string> speedLabels = {"Speed: 1x", "Speed: 2x", "Speed: 3x"};
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < matchSpeedCount(); ++i) {
         Button btn;
-        btn.rect.setSize(sf::Vector2f(100.f, 30.f));
-        btn.rect.setPosition(1120.f, 70.f + i * 40.f);
+        // Below the LIVE STATS block (ends ~y230) so the five buttons don't overlap it.
+        btn.rect.setSize(sf::Vector2f(100.f, 28.f));
+        btn.rect.setPosition(1120.f, 270.f + i * 32.f);
         btn.baseColor = sf::Color(100, 100, 150);
         btn.rect.setFillColor(btn.baseColor);
-        
+
         btn.text.setFont(font);
-        btn.text.setString(speedLabels[i]);
+        btn.text.setString(std::string("Speed: ") + matchSpeedLabel(i));
         btn.text.setCharacterSize(14);
         btn.text.setFillColor(sf::Color::White);
         sf::FloatRect sr2 = btn.text.getLocalBounds();
         btn.text.setOrigin(sr2.left + sr2.width/2.0f, sr2.top + sr2.height/2.0f);
         btn.text.setPosition(btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
                              btn.rect.getPosition().y + btn.rect.getSize().y/2.0f);
-        btn.action = speedLabels[i];
+        btn.action = matchSpeedLabel(i);
         m_speedButtons.push_back(btn);
     }
     
@@ -276,7 +297,10 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
             
             for (size_t i = 0; i < m_speedButtons.size(); ++i) {
                 if (m_speedButtons[i].rect.getGlobalBounds().contains(mousePos)) {
-                    m_matchSpeedMode = i; // 0, 1, or 2
+                    // Drive the ACTUAL speed. Button i maps straight to matchSpeed i (both
+                    // index the 0.5x..2.5x table). This used to write a dead variable, so
+                    // the buttons did nothing.
+                    g_settings.matchSpeed = (int)i;
                 }
             }
         }
@@ -397,10 +421,58 @@ void MatchScreen::resolveQTE(const QTEResult& result) {
 
 void MatchScreen::update(sf::Time deltaTime) {
     if (!m_engine) return;
-    
+
     if (m_engine->isUserSubbedOff()) {
         m_statusText.setString(m_engine->getUserStartReason());
         m_statusText.setFillColor(sf::Color(255, 100, 100));
+    }
+
+    // Cosmetic clock. Runs before every early-return below so it keeps ticking through
+    // scripted episodes and minigames, where the engine's minute is frozen and the board
+    // used to sit on a static number for seconds at a time.
+    {
+        float engineMin = (float)m_engine->getMinute();
+
+        // Never lag the engine (in normal play minutes fly by and drag the board along).
+        if (m_displayTime < engineMin) m_displayTime = engineMin;
+
+        // ...and never overtake it, or the board would announce a minute the engine
+        // hasn't reached and could overshoot full time.
+        float ceiling = engineMin + 0.95f;
+
+        // 4 match-seconds per real second. The board may only travel 0.95 min = 57
+        // match-seconds while the engine's minute is frozen, so this rate buys ~14s of
+        // episode before running out of room - longer than any episode can last (the
+        // minigame's own timeout is 12s). At 6/s it ran out after 9.5s and the clock
+        // visibly froze at :57 for the rest of a long episode.
+        float step = deltaTime.asSeconds() * (4.f / 60.f);
+
+        // The clock doesn't run before the ball does. Kick-off holds for ~2s while the
+        // sides line up; ticking through that meant the ball was struck at ~0:08 instead
+        // of 0:00 (and likewise for restarts after a goal, where play is dead).
+        if (m_visualState == VisualState::Kickoff) {
+            m_displayTime = engineMin;
+        } else {
+            // Ease into the ceiling instead of slamming into it, so if an episode ever does
+            // outlast the budget the clock crawls rather than dead-stops.
+            float room = ceiling - m_displayTime;
+            if (room > 0.f) m_displayTime += std::min(step, room * 0.5f);
+            if (m_displayTime > ceiling) m_displayTime = ceiling;
+        }
+    }
+
+    // Scoreboard is refreshed here, above every early return below. It used to be updated
+    // further down in this function, past the `return` that hands off to updateMinigame -
+    // so during a minigame the clock advanced internally but the text on screen never got
+    // rewritten, and the board sat frozen for the whole episode.
+    m_scoreText.setString(std::to_string(m_engine->getHomeScore()) + " - " + std::to_string(m_engine->getAwayScore()));
+    {
+        int mm = (int)m_displayTime;
+        int ss = (int)((m_displayTime - (float)mm) * 60.f);
+        if (ss > 59) ss = 59;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d:%02d", mm, ss);
+        m_timeText.setString(buf);
     }
 
     if (m_engine->getState() == MatchState::Finished) {
@@ -475,11 +547,10 @@ void MatchScreen::update(sf::Time deltaTime) {
     updateVisuals(deltaTime);
     
     if (m_engine->getState() == MatchState::Simulating || m_engine->getState() == MatchState::Finished) {
-        float speedDelay = 0.4f;
-        if (g_settings.matchSpeed == 0) speedDelay = 1.0f;
-        if (g_settings.matchSpeed == 2) speedDelay = 0.1f;
-        if (g_settings.matchSpeed == 3) speedDelay = 0.0f;
-        
+        // 1x = a minute every 0.4s; the multiplier scales that. No "instant" any more -
+        // 2.5x is the ceiling, since 3x was too fast to follow.
+        float speedDelay = 0.4f / matchSpeedMult(g_settings.matchSpeed);
+
         m_simTimer += deltaTime.asSeconds();
         if (m_simTimer > speedDelay) {
             m_simTimer = 0.f;
@@ -566,9 +637,6 @@ void MatchScreen::update(sf::Time deltaTime) {
             }
             m_momentumBars.push_back(r);
         }
-    
-    m_scoreText.setString(std::to_string(m_engine->getHomeScore()) + " - " + std::to_string(m_engine->getAwayScore()));
-    m_timeText.setString(std::to_string(m_engine->getMinute()) + "'");
     
     std::string fullLog = "";
     for (const auto& l : m_visibleLogs) { fullLog += l.text + "\n"; }
@@ -839,6 +907,9 @@ void MatchScreen::initMinigame() {
     m_ballCarrierIdx = -1;
     m_ballVelocity = sf::Vector2f(0.f, 0.f);
     m_ballFriction = 1.5f; // default rolling drag; the GK shot below lowers it
+    // Freeze the ambient anchor where the episode begins, so the rest of the shape holds
+    // position instead of sliding around with the ball the user is dribbling.
+    m_ambientAnchor = m_visualBall.getPosition();
 
     m_dashTimer = 0.f;
     m_dashSpeedBonus = 0.f;
@@ -884,17 +955,17 @@ void MatchScreen::initMinigame() {
     }
 
     if (p->position == PlayerPosition::Goalkeeper && m_attackPhase == Beat::GkShotWindup) {
-        // The GK doesn't get to gather a stray ball - a shot is already coming in.
-        // Strike it from the edge of the box, on a clean straight line to goal.
-        // (It used to spawn back at x=400, near halfway, so it ricocheted through the
-        // whole crowd of frozen dots before ever reaching the keeper. Collisions with
-        // everyone except the keeper are also suppressed for this flight - see
-        // updateMinigame - so the shot arrives instead of pinballing.)
+        // A shot is coming in. Strike it from where the ATTACKER actually is (he was shown
+        // driving into a shooting position during the wind-up) rather than teleporting the
+        // ball to a fixed edge-of-box point - which is what made it look like the ball just
+        // appeared near the goal. Collisions with everyone except the keeper are suppressed
+        // for this flight (see updateMinigame), so it arrives cleanly instead of pinballing.
         bool userIsHome = m_engine->isHome();
         float goalX = userIsHome ? 35.f : 845.f;
-        float originX = userIsHome ? goalX + 225.f : goalX - 225.f;
 
-        sf::Vector2f origin(originX, m_shotTargetY);
+        sf::Vector2f origin = (m_attackFwdIdx >= 0)
+            ? m_dots[m_attackFwdIdx].shape.getPosition()
+            : sf::Vector2f(userIsHome ? 260.f : 620.f, m_shotTargetY);
         sf::Vector2f goalPoint(goalX, m_shotTargetY);
         m_visualBall.setPosition(origin);
 
@@ -902,12 +973,11 @@ void MatchScreen::initMinigame() {
         float len = std::hypot(dir.x, dir.y);
         if (len > 0.f) { dir.x /= len; dir.y /= len; }
 
-        // A struck shot shouldn't decay like a loose ball, or it crawls to a halt short
-        // of the line. With this drag and speed the ball covers the 225px in ~1.6s,
-        // which comfortably outlasts the save QTE below (~0.9-1.3s depending on the
-        // keeper's stat), so the bar always resolves before the ball arrives.
+        // A struck shot keeps its pace instead of decaying like a loose ball. Weight it to
+        // the distance so it takes ~1.4s to reach the line whatever the range - long enough
+        // that the save QTE below (~0.9-1.3s) always resolves before the ball arrives.
         m_ballFriction = 0.25f;
-        m_ballVelocity = dir * 170.f;
+        m_ballVelocity = dir * std::max(len * 0.85f, 150.f);
 
         // The save is a reaction test: the bar arms itself the moment the shot is
         // struck. Lock it in the zone to parry, miss it (or let it expire) and it's a
@@ -1140,11 +1210,13 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
             if (success && m_pendingKind == MinigameActionKind::Shot) {
                 int gkStrength = m_engine->getOpponentClub() ? m_engine->getOpponentClub()->strength : 65;
                 float centrality = std::clamp(1.f - std::abs(m_shotTargetY - 290.f) / 40.f, 0.f, 1.f);
-                // Base reach from the keeper's quality, then mostly only for central shots.
-                float base = (gkStrength - 30) * 0.8f;                 // str 50->16, 90->48
-                float saveChance = base * (0.35f + 0.65f * centrality); // corner ~35% of base
-                saveChance -= m_qteAccuracy * 12.f;                     // a cleaner strike is harder to stop
-                saveChance = std::clamp(saveChance, 4.f, 70.f);
+                // Keepers are far more of a wall now: scoring at will (12 in a match) was
+                // too easy. Even a corner is a real save chance; central shots he usually
+                // stops. Range still scatters the shot before it gets here.
+                float base = (gkStrength - 20) * 1.1f;                  // str 50->33, 90->77
+                float saveChance = base * (0.5f + 0.5f * centrality);   // corner ~50% of base
+                saveChance -= m_qteAccuracy * 8.f;                      // a cleaner strike is a bit harder to stop
+                saveChance = std::clamp(saveChance, 12.f, 88.f);
                 if ((rand() % 100) < (int)saveChance) {
                     success = false; // saved - not a goal
                     // Park the ball at the keeper so it visibly stops there instead of
@@ -1178,18 +1250,46 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         }
     }
 
-    // Fallback: the player never committed to an action. This used to hand defenders
-    // and keepers a free *success* ("survived the attack") for standing still, which
-    // meant doing nothing was a winning strategy. Standing still is now a failure for
-    // everyone - the outcome should come from the QTE, not from waiting it out.
-    if (m_minigameTimer > 12.0f && m_minigameActive) {
+    // Fallback: the player dithered on the ball without acting. Standing still is a
+    // failure - but the loss must be clean. It used to resolve as a generic miss and hand
+    // the ball back to NORMAL play with no carrier, so NormalPlay grabbed a *random*
+    // player and the ball flew off to him ("the ball starts flying randomly"). Instead,
+    // if we were on the ball, an opponent simply takes it off us and keeps it at his feet.
+    if (m_minigameTimer > 8.0f && m_minigameActive) {
         Player* p = m_gameManager->getPlayer();
+        bool onBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+
+        if (onBall) {
+            // Nearest outfield opponent robs us and keeps the ball at his feet. Snap the
+            // ball to him rather than leaving it where we stood - otherwise NormalPlay
+            // drives it across the whole pitch to reach him ("it flies to the keeper").
+            // Exclude their keeper: a goalkeeper doesn't come out to midfield for a tackle.
+            int oppBase = m_engine->isHome() ? 11 : 0;
+            sf::Vector2f bPos2 = m_visualBall.getPosition();
+            int thief = -1; float best = 1e9f;
+            for (int i = oppBase; i < oppBase + 11; ++i) {
+                if (i % 11 == 0) continue; // not the keeper
+                if (hasRedCard(i)) continue;
+                sf::Vector2f d = m_dots[i].shape.getPosition() - bPos2;
+                float dd = std::hypot(d.x, d.y);
+                if (dd < best) { best = dd; thief = i; }
+            }
+            m_ballVelocity = sf::Vector2f(0.f, 0.f);
+            if (thief >= 0) {
+                m_ballCarrierIdx = thief;
+                m_visualBall.setPosition(m_dots[thief].shape.getPosition());
+                m_ballTarget = m_dots[thief].shape.getPosition();
+            }
+        }
+
         MinigameActionKind kind = (p->position == PlayerPosition::Goalkeeper) ? MinigameActionKind::Save
                                  : (p->position == PlayerPosition::Defender) ? MinigameActionKind::Tackle
                                  : m_pendingKind;
+        // On the ball and idle -> a turnover ("robbed of possession"), not a missed shot.
+        ActionVariant outcomeVariant = onBall ? ActionVariant::Dispossessed : m_pendingVariant;
         m_qte.cancel();
         m_qteAccuracy = 0.f;
-        m_engine->processMinigameResult(buildMinigameResult(false, kind, m_pendingVariant));
+        m_engine->processMinigameResult(buildMinigameResult(false, kind, outcomeVariant));
         endMinigame();
     }
 }
@@ -1262,7 +1362,8 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         window.draw(m_btnSkipText);
         for (size_t i = 0; i < m_speedButtons.size(); ++i) {
             sf::RectangleShape r = m_speedButtons[i].rect;
-            if (m_matchSpeedMode == (int)i) r.setOutlineThickness(2.f);
+            // Highlight the button matching the real speed (button i == matchSpeed i).
+            if (g_settings.matchSpeed == (int)i) r.setOutlineThickness(2.f);
             else r.setOutlineThickness(0.f);
             r.setOutlineColor(sf::Color::Yellow);
             window.draw(r);

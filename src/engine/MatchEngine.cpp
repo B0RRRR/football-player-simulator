@@ -87,6 +87,22 @@ void MatchEngine::commitEvent(const MatchEvent& event) {
         if (event.outcome == EventOutcome::RedCard) {
             if (event.isHome) m_homeStats.redCards++;
             else m_awayStats.redCards++;
+
+            // Actually send a player off the pitch. hasRedCard() (which decides who is
+            // drawn) reads the index lists, and only the scheduled/user red cards recorded
+            // an index before - a red from simulateAIEvent or a minigame left all 11 on
+            // the field. Reconcile: if the index list is short of the stat, remove a
+            // random outfield player who isn't already off.
+            std::vector<int>& idxList = event.isHome ? m_homeRedCards : m_awayRedCards;
+            int stat = event.isHome ? m_homeStats.redCards : m_awayStats.redCards;
+            if ((int)idxList.size() < stat) {
+                for (int tries = 0; tries < 20; ++tries) {
+                    int cand = 1 + rand() % 10; // 1..10, keep the keeper on
+                    bool taken = false;
+                    for (int r : idxList) if (r == cand) taken = true;
+                    if (!taken) { idxList.push_back(cand); break; }
+                }
+            }
         } else {
             if (event.isHome) m_homeStats.yellowCards++;
             else m_awayStats.yellowCards++;
@@ -115,19 +131,21 @@ void MatchEngine::updateMinute() {
         m_player->injuredDays = 14 + rand() % 21; // 2 to 5 weeks
     }
     
-    if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
+    if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeRedCards.empty() && m_awayRedCards.empty()) {
         addLog("RED CARD! [USER]", EventType::Card, m_isHome, EventOutcome::RedCard);
         m_userSubbedOff = true;
         m_userStartReason = "Status: SENT OFF (Red Card)";
         m_player->suspensionMatches = 2; // user suspended
-        if (m_isHome) { m_homeStats.redCards++; m_homeRedCards.push_back(-1); } // -1 indicates user
-        else { m_awayStats.redCards++; m_awayRedCards.push_back(-1); }
+        // Record the sent-off player (-1 = the user). The redCards STAT is incremented
+        // once, in commitEvent, so it isn't double-counted.
+        if (m_isHome) m_homeRedCards.push_back(-1);
+        else m_awayRedCards.push_back(-1);
     }
-    
-    if (m_minute == m_aiRedCardMinute && m_homeStats.redCards < 1 && m_awayStats.redCards < 1) {
+
+    if (m_minute == m_aiRedCardMinute && m_homeRedCards.empty() && m_awayRedCards.empty()) {
         addLog("RED CARD! [AI] " + std::to_string(m_aiRedCardIndex), EventType::Card, m_aiRedCardIsHome, EventOutcome::RedCard);
-        if (m_aiRedCardIsHome) { m_homeStats.redCards++; m_homeRedCards.push_back(m_aiRedCardIndex); }
-        else { m_awayStats.redCards++; m_awayRedCards.push_back(m_aiRedCardIndex); }
+        if (m_aiRedCardIsHome) m_homeRedCards.push_back(m_aiRedCardIndex);
+        else m_awayRedCards.push_back(m_aiRedCardIndex);
     }
     
     int randVal = rand() % 100;
@@ -151,10 +169,12 @@ void MatchEngine::updateMinute() {
         currentMomentum += (m_isHome ? 30.0f : -30.0f);
         m_playerTeamAttacking = true;
         
-        bool triggerMg = false;
-        if (m_player->position == PlayerPosition::Forward && (rand() % 100 < 40)) triggerMg = true;
-        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 30)) triggerMg = true;
-        
+        // When our team attacks and the user plays an attacking role, he always gets to
+        // play it out - the ball is his. Previously this was a 40%/30% roll, so the user
+        // could watch his side attack all match and never touch the ball.
+        bool triggerMg = (m_player->position == PlayerPosition::Forward
+                       || m_player->position == PlayerPosition::Midfielder);
+
         if (triggerMg && !m_userSubbedOff) {
             addLog("Minigame triggering for player", EventType::PendingMinigame, m_isHome);
         } else {
@@ -164,11 +184,13 @@ void MatchEngine::updateMinute() {
         currentMomentum += (m_isHome ? -30.0f : 30.0f);
         m_playerTeamAttacking = false;
         
-        bool triggerMg = false;
-        if (m_player->position == PlayerPosition::Defender && (rand() % 100 < 40)) triggerMg = true;
-        if (m_player->position == PlayerPosition::Goalkeeper && (rand() % 100 < 40)) triggerMg = true;
-        if (m_player->position == PlayerPosition::Midfielder && (rand() % 100 < 20)) triggerMg = true;
-        
+        // Same on the other side: when the opponent attacks and the user plays a
+        // defending role, he always gets to try to stop it, so a defender/keeper/
+        // midfielder is never a spectator to the whole match either.
+        bool triggerMg = (m_player->position == PlayerPosition::Defender
+                       || m_player->position == PlayerPosition::Goalkeeper
+                       || m_player->position == PlayerPosition::Midfielder);
+
         if (triggerMg && !m_userSubbedOff) {
             addLog("Minigame triggering against player", EventType::PendingMinigame, !m_isHome);
         } else {
@@ -236,6 +258,19 @@ void MatchEngine::processMinigameResult(const MinigameResult& result) {
     m_playerRating += ratingDelta;
     if (m_playerRating > 10.0f) m_playerRating = 10.0f;
     if (m_playerRating < 1.0f) m_playerRating = 1.0f;
+
+    // Lost the ball without an attempt - dithered until robbed, or dispossessed by a
+    // closing opponent. This is a turnover, not a missed shot, so it gets its own line
+    // (the engine used to only know "shot missed", which is why idling read as
+    // "missed a golden opportunity"). Possession passes to the opponent.
+    if (result.variant == ActionVariant::Dispossessed) {
+        // EventType::Normal, not Chance: it's a plain turnover. A Chance would make the
+        // visual layer stage a full opponent attack + shot off the back of it, overstating
+        // a simple loss of possession.
+        addLog(m_player->name + " is robbed of possession!", EventType::Normal, !m_isHome, EventOutcome::TackleLost);
+        m_state = MatchState::Simulating;
+        return;
+    }
 
     bool finesse = (result.variant == ActionVariant::Finesse);
     bool slide = (result.variant == ActionVariant::Slide);
