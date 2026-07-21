@@ -110,6 +110,16 @@ void MatchEngine::commitEvent(const MatchEvent& event) {
     }
 }
 
+void MatchEngine::setLastRedCardPlayer(bool isHome, int localIdx) {
+    std::vector<int>& list = isHome ? m_homeRedCards : m_awayRedCards;
+    if (list.empty()) return;
+    if (list.back() == -1) return;          // the user was sent off - leave it be
+    if (localIdx <= 0 || localIdx > 10) return;
+    // Don't collapse two sent-off players onto the same dot.
+    for (size_t i = 0; i + 1 < list.size(); ++i) if (list[i] == localIdx) return;
+    list.back() = localIdx;
+}
+
 void MatchEngine::triggerMinigame() {
     m_state = MatchState::MinigameTriggered;
 }

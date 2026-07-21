@@ -20,6 +20,7 @@ void MatchScreen::resetToKickoff() {
     m_stateTimer = 0.f;
     m_currentZoom = 1.0f;
     m_camera = m_uiView;
+    m_sendOffGraceIdx = -1;
     
     int kickerIdx = m_pendingEvent.isHome ? 11 + 9 : 9; // Away team kicks off if home scored
     if (m_engine->getMinute() == 0) kickerIdx = 9; // At 0' Home kicks off
@@ -273,6 +274,79 @@ void MatchScreen::updateMinigameAI(float dt) {
     endMinigame();
 }
 
+bool MatchScreen::offsideBuildup(int strikerIdx, bool attackingHome, int holderIdx) {
+    // Keep the ball with the passer and let the striker run in. Whistle only once he is
+    // CLEARLY past the offside line (real positions, not just his target) and the run has
+    // played out for a beat - so on screen you actually see him ahead of the last defender
+    // before the flag. If the defence tracks him and he never gets clear, drop the offside
+    // intent and let the move continue onside rather than flagging a phantom.
+    float dir = attackingHome ? 1.f : -1.f;
+    float lineFwd = (offsideLineX(attackingHome) - 440.f) * dir;
+    float fwdNow = (m_dots[strikerIdx].shape.getPosition().x - 440.f) * dir;
+    bool clearlyBeyond = fwdNow > lineFwd + 10.f;
+
+    if (m_offsidePassReleased) {
+        // The pass is on its way to the offside runner. Keep the ball loose (the run
+        // scripts re-grab it as carrier every frame, so force it back to -1) and steer it
+        // onto him; raise the flag only once it reaches his feet, so the through-ball is
+        // seen being played rather than the ball teleporting to him.
+        m_ballCarrierIdx = -1;
+        m_ballTarget = m_dots[strikerIdx].shape.getPosition();
+        float d = std::hypot(m_visualBall.getPosition().x - m_ballTarget.x,
+                             m_visualBall.getPosition().y - m_ballTarget.y);
+        if (d < 14.f || m_stateTimer > 5.0f) resolveOffside(attackingHome);
+        return true;
+    }
+
+    // Hold the ball with the passer while the striker breaks beyond the last defender.
+    if (holderIdx >= 0 && holderIdx < (int)m_dots.size()) m_ballCarrierIdx = holderIdx;
+
+    if (clearlyBeyond && m_stateTimer > 1.5f) {
+        // Clearly offside and the run has read on screen: slide the pass into him now. The
+        // whistle waits for the ball to arrive (handled in the branch above).
+        m_offsidePassReleased = true;
+        m_ballCarrierIdx = -1;
+        m_ballTarget = m_dots[strikerIdx].shape.getPosition();
+    } else if (m_stateTimer > 3.5f) {
+        m_offsideRun = false; m_stateTimer = 0.f; // defence tracked him - no offside after all
+    }
+    return true;
+}
+
+void MatchScreen::resolveOffside(bool attackingHome) {
+    // Put the ball where the offside runner strayed, add a visual-only log (the engine
+    // has no offside event and it doesn't affect stats), then restart to the defending
+    // side. setupFreeKick hands the ball to the OTHER team and gives a clean dead-ball
+    // restart with no challenge - exactly an offside decision.
+    if (m_attackFwdIdx >= 0 && m_attackFwdIdx < (int)m_dots.size()) {
+        m_visualBall.setPosition(m_dots[m_attackFwdIdx].shape.getPosition());
+    }
+    m_ballVelocity = sf::Vector2f(0.f, 0.f);
+    m_ballCarrierIdx = -1;
+    m_offsidePassReleased = false;
+
+    MatchEvent e;
+    e.text = "[" + std::to_string(m_engine->getMinute()) + "'] Offside! The flag is up, the run was mistimed.";
+    e.type = EventType::Normal;
+    e.isHome = !attackingHome; // free kick goes to the defending side
+    e.outcome = EventOutcome::None;
+    m_visibleLogs.push_back(e);
+    if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
+
+    setupFreeKick(attackingHome); // attacking side gave it away -> defenders restart
+}
+
+bool MatchScreen::handleFoulIfCard() {
+    if (m_pendingEvent.type != EventType::Card && m_pendingEvent.type != EventType::Foul) {
+        return false;
+    }
+    m_engine->commitEvent(m_pendingEvent);
+    m_visibleLogs.push_back(m_pendingEvent);
+    if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
+    beginFoul(m_pendingEvent.isHome);
+    return true;
+}
+
 void MatchScreen::beginFoul(bool offenderIsHome) {
     // Tear down any live minigame first (a mistimed slide tackle gives a card from inside
     // an episode), so its physics/zoom don't run over the challenge.
@@ -282,28 +356,48 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
 
     m_foulOffenderIsHome = offenderIsHome;
 
+    // Capture the ball carrier BEFORE clearing it - the challenge should centre on the man
+    // who actually had the ball, not just whoever happens to be nearest the loose ball.
+    int carrier = m_ballCarrierIdx;
+
     sf::Vector2f spot = m_visualBall.getPosition();
     m_ballVelocity = sf::Vector2f(0.f, 0.f);
     m_ballFriction = 1.5f;
     m_ballCarrierIdx = -1;
 
-    // Offender = nearest outfield player of the offending side; victim = nearest of the
-    // fouled side. They're the two that act out the challenge over the ball.
     int offBase = offenderIsHome ? 0 : 11;
     int vicBase = offenderIsHome ? 11 : 0;
-    auto nearest = [&](int base) {
+
+    // Nearest outfield player of a team to a point.
+    auto nearestTo = [&](int base, sf::Vector2f from) {
         int best = -1; float bd = 1e9f;
         for (int i = base; i < base + 11; ++i) {
             if (i % 11 == 0) continue;      // not the keeper
             if (hasRedCard(i)) continue;
-            sf::Vector2f d = m_dots[i].shape.getPosition() - spot;
+            sf::Vector2f d = m_dots[i].shape.getPosition() - from;
             float dd = std::hypot(d.x, d.y);
             if (dd < bd) { bd = dd; best = i; }
         }
         return best;
     };
-    m_foulOffenderIdx = nearest(offBase);
-    m_foulVictimIdx = nearest(vicBase);
+
+    // Build the challenge around whoever had the ball. If the carrier is on the fouled
+    // side he's the victim (a defender lunges in); if he's on the offending side he IS the
+    // fouler (he barged someone). Falls back to nearest-to-ball when the ball was loose.
+    bool carrierValid = (carrier >= 0 && carrier % 11 != 0 && !hasRedCard(carrier));
+    bool carrierIsOffender = carrierValid && ((carrier < 11) == offenderIsHome);
+    bool carrierIsVictim   = carrierValid && ((carrier < 11) != offenderIsHome);
+
+    if (carrierIsVictim) {
+        m_foulVictimIdx = carrier;
+        m_foulOffenderIdx = nearestTo(offBase, m_dots[carrier].shape.getPosition());
+    } else if (carrierIsOffender) {
+        m_foulOffenderIdx = carrier;
+        m_foulVictimIdx = nearestTo(vicBase, m_dots[carrier].shape.getPosition());
+    } else {
+        m_foulOffenderIdx = nearestTo(offBase, spot);
+        m_foulVictimIdx = nearestTo(vicBase, spot);
+    }
 
     // Work out the challenge geometry ONCE, here. Doing it per frame in the
     // FoulChallenge branch meant the victim's "stagger away" target was recomputed from
@@ -312,16 +406,37 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
     if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
         sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
         sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
+
+        // The foul happened at the victim's feet - put the dead ball there, so the
+        // challenge and the free kick both centre on him rather than on wherever the ball
+        // had drifted.
+        m_visualBall.setPosition(vicPos);
+        m_ballTarget = vicPos;
+
         sf::Vector2f away = vicPos - offPos;
         float len = std::hypot(away.x, away.y);
         if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
 
-        m_foulLungeTarget = vicPos;                 // offender goes through the man
-        m_foulStaggerTarget = vicPos + away * 26.f; // victim is knocked this far and stops
+        // Offender lunges slightly PAST the victim (a real challenge, not a gentle touch)
+        // and the victim is knocked well clear, so the contact reads on screen.
+        m_foulLungeTarget = vicPos + (vicPos - offPos) * 0.15f;
+        m_foulStaggerTarget = vicPos + away * 45.f;
+    }
+
+    // If this challenge is a sending-off, make sure the player who leaves the pitch is the
+    // one we just showed lunging in. commitEvent (already run) had picked a random outfield
+    // shirt, so the red used to fall on someone nowhere near the incident.
+    if (m_pendingEvent.outcome == EventOutcome::RedCard && m_foulOffenderIdx >= 0) {
+        m_engine->setLastRedCardPlayer(m_foulOffenderIsHome, m_foulOffenderIdx % 11);
+        // Setting the red would make hasRedCard() true at once and stop him being drawn -
+        // he'd vanish mid-lunge. Keep him on the pitch through the challenge and the dead
+        // ball; he leaves only when play restarts (cleared in the Foul->NormalPlay hop).
+        m_sendOffGraceIdx = m_foulOffenderIdx;
     }
 
     m_visualState = VisualState::FoulChallenge;
     m_stateTimer = 0.f;
+    m_foulClock = 0.f;
 }
 
 void MatchScreen::setupFreeKick(bool offenderIsHome) {
@@ -372,11 +487,12 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
 
 void MatchScreen::updateVisuals(sf::Time deltaTime) {
     float dt = deltaTime.asSeconds();
+    m_foulClock += dt; // real time, before the speed multiplier below
 
     // Scripts/animation run at the chosen multiplier (0.5x..2.5x). Previously only Fast
     // (2x) and Instant (8x!) were handled - the latter is why scripts were a blur.
     dt *= matchSpeedMult(g_settings.matchSpeed);
-    
+
     m_stateTimer += dt;
     float mom = 0.0f;
     if (!m_engine->getMomentumHistory().empty()) mom = m_engine->getMomentumHistory().back();
@@ -476,18 +592,42 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         // victim's target fleeing ahead of him every frame.
         if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
             m_dots[m_foulOffenderIdx].targetPos = m_foulLungeTarget;
-            m_dots[m_foulOffenderIdx].speed = 150.f;
+            m_dots[m_foulOffenderIdx].speed = 260.f; // charges in
             m_dots[m_foulVictimIdx].targetPos = m_foulStaggerTarget;
-            m_dots[m_foulVictimIdx].speed = 70.f;
+            m_dots[m_foulVictimIdx].speed = 130.f;   // knocked back
         }
+
+        // Zoom in on the incident so the challenge is actually visible - on the full-pitch
+        // view a 40px lunge among 22 dots was impossible to spot, which is why "the
+        // challenge isn't visible". Frame the offender/victim, or the ball if unknown.
+        sf::Vector2f focus = spot;
+        if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
+            focus = (m_dots[m_foulOffenderIdx].shape.getPosition()
+                   + m_dots[m_foulVictimIdx].shape.getPosition()) * 0.5f;
+        }
+        m_currentZoom += (0.5f - m_currentZoom) * 3.0f * dt;
+        float vw = 1280.f * m_currentZoom, vh = 720.f * m_currentZoom;
+        float minX = 40.f + vw / 2.f, maxX = 840.f - vw / 2.f;
+        float minY = 130.f + vh / 2.f, maxY = 450.f - vh / 2.f;
+        sf::Vector2f tc = focus;
+        tc.x = (minX > maxX) ? 440.f : std::clamp(tc.x, minX, maxX);
+        tc.y = (minY > maxY) ? 290.f : std::clamp(tc.y, minY, maxY);
+        sf::Vector2f cc = m_camera.getCenter();
+        cc += (tc - cc) * 4.0f * dt;
+        m_camera.setCenter(cc);
+        m_camera.setSize(vw, vh);
 
         // Keep the ball dead on the spot through the challenge.
         m_visualBall.setPosition(spot);
         m_ballTarget = spot;
         m_ballVelocity = sf::Vector2f(0.f, 0.f);
 
-        if (m_stateTimer > 1.3f) {
-            setupFreeKick(m_foulOffenderIsHome); // whistle: settle into the dead ball
+        // Real-time beat (m_foulClock, not the speed-scaled m_stateTimer) so the challenge
+        // reads the same at 0.5x or 2.5x - long enough to see the contact and a beat to
+        // register it. Then the whistle settles into the dead ball (which pulls the camera
+        // back out).
+        if (m_foulClock > 1.6f) {
+            setupFreeKick(m_foulOffenderIsHome);
         }
     }
     else if (m_visualState == VisualState::Foul) {
@@ -495,6 +635,17 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         // knocks it back into play.
         m_ballCarrierIdx = -1;
         m_ballTarget = m_visualBall.getPosition();
+
+        // Pull the camera back out from the challenge zoom to the wide match view before
+        // play restarts.
+        m_currentZoom += (1.0f - m_currentZoom) * 3.0f * dt;
+        if (m_currentZoom > 0.98f) { m_currentZoom = 1.0f; m_camera = m_uiView; }
+        else {
+            sf::Vector2f cc = m_camera.getCenter();
+            cc += (sf::Vector2f(640.f, 360.f) - cc) * 3.0f * dt;
+            m_camera.setCenter(cc);
+            m_camera.setSize(1280.f * m_currentZoom, 720.f * m_currentZoom);
+        }
 
         bool takerReady = false;
         if (m_foulPlayerIdx >= 0 && m_foulPlayerIdx < (int)m_dots.size()) {
@@ -521,6 +672,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             }
             m_visualState = VisualState::NormalPlay;
             m_stateTimer = 0.f;
+            m_sendOffGraceIdx = -1; // the sent-off man now leaves the pitch as play resumes
         }
     }
 
@@ -751,13 +903,19 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_dots[m_attackWingerIdx].targetPos = sf::Vector2f(boxX, m_attackWingerIdx%11==5 ? 160.f : 420.f);
                     m_dots[m_attackWingerIdx].speed = 150.f;
 
-                    // Send the striker into the box *now*, while the winger is still carrying
-                    // the ball. He used to only set off at the moment of the cross - but the
-                    // ball travels at 500/s and he runs at 150/s, so it landed on the spot
-                    // and hung there in mid-air waiting for him to catch up.
-                    sf::Vector2f crossTarget(boxX, m_shotTargetY);
+                    // Striker attacks the box, but held to the offside line rather than the
+                    // old fixed boxX that parked him miles beyond the last defender. On an
+                    // m_offsideRun episode he deliberately steps beyond it and gets flagged.
+                    bool aHome = m_pendingEvent.isHome;
+                    float dir = aHome ? 1.f : -1.f;
+                    float lineFwd = (offsideLineX(aHome) - 440.f) * dir;
+                    float wantFwd = (boxX - 440.f) * dir;
+                    float tgtFwd = m_offsideRun ? (lineFwd + 40.f) : std::min(wantFwd, lineFwd - 12.f);
+                    sf::Vector2f crossTarget(440.f + tgtFwd * dir, m_shotTargetY);
                     m_dots[m_attackFwdIdx].targetPos = crossTarget;
                     m_dots[m_attackFwdIdx].speed = 150.f;
+
+                    if (m_offsideRun && offsideBuildup(m_attackFwdIdx, aHome, m_attackWingerIdx)) return;
 
                     sf::Vector2f fwdPos = m_dots[m_attackFwdIdx].shape.getPosition();
                     float fwdToTarget = std::hypot(fwdPos.x - crossTarget.x, fwdPos.y - crossTarget.y);
@@ -794,13 +952,24 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(deepX, m_shotTargetY);
                     m_dots[m_ballCarrierIdx].speed = 140.f;
 
-                    sf::Vector2f runTarget(boxX, m_shotTargetY);
+                    // The run is timed to the offside line - onside he peels off level with
+                    // the last defender; on an m_offsideRun episode he breaks too early and
+                    // gets flagged when the ball is slid through.
+                    bool aHome = m_pendingEvent.isHome;
+                    float dir = aHome ? 1.f : -1.f;
+                    float lineFwd = (offsideLineX(aHome) - 440.f) * dir;
+                    float wantFwd = (boxX - 440.f) * dir;
+                    float tgtFwd = m_offsideRun ? (lineFwd + 40.f) : std::min(wantFwd, lineFwd - 12.f);
+                    sf::Vector2f runTarget(440.f + tgtFwd * dir, m_shotTargetY);
                     m_dots[m_attackFwdIdx].targetPos = runTarget;
                     m_dots[m_attackFwdIdx].speed = 200.f; // making the run
+
+                    if (m_offsideRun && offsideBuildup(m_attackFwdIdx, aHome, m_ballCarrierIdx)) return;
 
                     sf::Vector2f fwdPos = m_dots[m_attackFwdIdx].shape.getPosition();
                     float fwdToTarget = std::hypot(fwdPos.x - runTarget.x, fwdPos.y - runTarget.y);
                     if (m_stateTimer > 0.8f && (fwdToTarget < 90.f || m_stateTimer > 3.0f)) {
+
                         m_attackPhase = Beat::CrossInFlight;
                         m_stateTimer = 0.f;
                         m_ballCarrierIdx = -1; // slide it into space
@@ -841,6 +1010,7 @@ void MatchScreen::runWingCross(float dt, const EpisodeCtx& ctx) {
                     // If there are pending events (like the shot outcome), pop it to use for the shot visualization
                     if (m_engine->hasLogs()) {
                         m_pendingEvent = m_engine->popRecentLog();
+                        if (handleFoulIfCard()) return; // a card here becomes a visible foul
                     }
                     m_attackPhase = Beat::Shot;
                     m_stateTimer = 0.f;
@@ -1078,6 +1248,7 @@ void MatchScreen::runMidfielderPass(float dt, const EpisodeCtx& ctx) {
                         // Forward shoots!
                         if (m_engine->hasLogs()) {
                             m_pendingEvent = m_engine->popRecentLog();
+                            if (handleFoulIfCard()) return; // a card here becomes a visible foul
                         }
                         m_attackPhase = Beat::Shot;
                         m_stateTimer = 0.f;

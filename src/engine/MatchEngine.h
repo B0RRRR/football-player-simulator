@@ -113,6 +113,11 @@ public:
     
     const std::vector<int>& getHomeRedCards() const { return m_homeRedCards; }
     const std::vector<int>& getAwayRedCards() const { return m_awayRedCards; }
+
+    // Point the most recent red card at a specific outfield player (local index 1..10), so
+    // the man sent off matches the one the visual challenge shows committing the foul.
+    // Leaves a user sending-off (-1) alone and won't duplicate a player already off.
+    void setLastRedCardPlayer(bool isHome, int localIdx);
     bool isUserSubbedOff() const { return m_userSubbedOff; }
     std::string getUserStartReason() const { return m_userStartReason; }
 

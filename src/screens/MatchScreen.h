@@ -112,6 +112,22 @@ private:
     // Plays a brief visible challenge (offender lunges into victim) before the dead ball,
     // so a card/foul reads as an actual foul rather than the ball just stopping.
     void beginFoul(bool offenderIsHome);
+    // If m_pendingEvent (just popped) is a card/foul, commit it and start the challenge,
+    // returning true so the caller aborts whatever it was doing. Episode scripts pop the
+    // "shot outcome" from the log queue and could otherwise swallow a card, treating it as
+    // a miss and skipping the visible foul.
+    bool handleFoulIfCard();
+    // Forward-coordinate (X) of the offside line for a team attacking: the second-rearmost
+    // defender of the side they're attacking. A runner beyond it is offside.
+    float offsideLineX(bool attackingHome) const;
+    // Whistle for offside and restart to the defending side. offenderIsHome names the
+    // ATTACKING team that strayed offside.
+    void resolveOffside(bool attackingHome);
+    // Holds the ball with the passer while the striker breaks clear, and whistles offside
+    // only once he is genuinely past the line (so it's visible on screen). If he can't get
+    // clear, drops the offside intent and the move plays on. Returns true while it owns the
+    // frame (caller should return).
+    bool offsideBuildup(int strikerIdx, bool attackingHome, int holderIdx);
     // Shared state every episode beat needs, computed once per frame.
     struct EpisodeCtx {
         int attackerBase;
@@ -175,11 +191,15 @@ private:
     int m_foulVictimIdx = -1;
     int m_foulOffenderIdx = -1;      // who committed the foul (shown lunging in)
     bool m_foulOffenderIsHome = true; // remembered across the challenge -> free kick
+    int m_sendOffGraceIdx = -1;      // a red-carded offender kept on screen until play restarts
     // Fixed once when the foul is given. Recomputing these per frame made the victim's
     // target run 28px further away every frame - a treadmill that sent both players
     // sprinting off across the pitch.
     sf::Vector2f m_foulLungeTarget;   // where the offender lunges to
     sf::Vector2f m_foulStaggerTarget; // where the victim is knocked to
+    // Real-time clock (NOT scaled by match speed) for the foul beats, so the challenge and
+    // dead-ball pause read the same however fast the match is being run.
+    float m_foulClock = 0.f;
     
     std::vector<MatchEvent> m_visibleLogs;
     std::vector<sf::RectangleShape> m_momentumBars;
@@ -201,6 +221,8 @@ private:
     MatchEvent m_pendingEvent;
     AttackShape m_attackShape = AttackShape::CenterAttack;
     bool m_passForward = true; // midfielder pass: forward (to a shot) vs sideways/back
+    bool m_offsideRun = false; // this cross/through-ball episode: the striker mistimed his run
+    bool m_offsidePassReleased = false; // the offside pass has been struck and is flying to him
     int m_attackWingerIdx;
     float m_shotTargetY;
     int m_attackFwdIdx;

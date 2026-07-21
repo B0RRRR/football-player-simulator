@@ -60,6 +60,26 @@ int MatchScreen::liveTeammate(int idx) const {
     return best >= 0 ? best : base; // fall back to the keeper only if nobody else is up
 }
 
+float MatchScreen::offsideLineX(bool attackingHome) const {
+    // The defending side is the OTHER team. Its goal is where the attack is heading:
+    // home defends x~35 (left), away defends x~845 (right).
+    int defBase = attackingHome ? 11 : 0;
+    float goalX = attackingHome ? 845.f : 35.f;
+    float attackDir = (goalX > 440.f) ? 1.f : -1.f; // +1 attacking right, -1 attacking left
+
+    // "Depth" = how far a defender sits toward his own goal. The rearmost (largest depth)
+    // is normally the keeper; the SECOND-rearmost defender is the offside line.
+    float deepest = -1e9f, second = -1e9f;
+    for (int i = defBase; i < defBase + 11; ++i) {
+        if (hasRedCard(i)) continue;
+        float depth = (m_dots[i].shape.getPosition().x - 440.f) * attackDir;
+        if (depth > deepest) { second = deepest; deepest = depth; }
+        else if (depth > second) { second = depth; }
+    }
+    if (second <= -1e8f) second = deepest; // fewer than 2 men (red cards): use the last one
+    return 440.f + second * attackDir; // depth -> X
+}
+
 int MatchScreen::nearestToBall(int base) const {
     sf::Vector2f ball = m_visualBall.getPosition();
     int best = -1;
@@ -476,6 +496,18 @@ void MatchScreen::update(sf::Time deltaTime) {
     }
 
     if (m_engine->getState() == MatchState::Finished) {
+        // The match is over. Drain the trailing FULL TIME marker (a text-only Normal
+        // event) without waiting for the ball to reach its carrier. The normal log-pop
+        // path below is gated on `distToCarrier < 10`, and since updateMinute only runs
+        // while the queue is empty, an unconsumed FULL TIME log froze the whole sim:
+        // the minute never advanced and the players passed among themselves forever.
+        // At full time there is no more choreography to sync to, so consume it outright.
+        if (m_engine->hasLogs() && m_visualState == VisualState::NormalPlay) {
+            MatchEvent e = m_engine->popRecentLog();
+            m_engine->commitEvent(e);
+            m_visibleLogs.push_back(e);
+            if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
+        }
         if (!m_engine->hasLogs() && m_visualState == VisualState::NormalPlay) {
             m_scriptTimer += deltaTime.asSeconds();
             if (m_scriptTimer > 2.0f) {
@@ -545,7 +577,7 @@ void MatchScreen::update(sf::Time deltaTime) {
     }
     
     updateVisuals(deltaTime);
-    
+
     if (m_engine->getState() == MatchState::Simulating || m_engine->getState() == MatchState::Finished) {
         // 1x = a minute every 0.4s; the multiplier scales that. No "instant" any more -
         // 2.5x is the ceiling, since 3x was too fast to follow.
@@ -603,6 +635,14 @@ void MatchScreen::update(sf::Time deltaTime) {
                 }
                 
                 m_shotTargetY = 290.f + (rand()%60 - 30.f);
+
+                // Rolled once per episode (not per frame in Setup): on a cross or through
+                // ball the striker occasionally strays offside and gets flagged. The run
+                // scripts read this to decide whether he holds the line or steps beyond it.
+                m_offsideRun = (m_attackShape == AttackShape::WingCross
+                             || m_attackShape == AttackShape::ThroughBall)
+                             && (rand() % 100 < 12);
+                m_offsidePassReleased = false;
             } else {
                 m_engine->commitEvent(m_pendingEvent);
                 m_visibleLogs.push_back(m_pendingEvent);
@@ -1310,7 +1350,7 @@ void MatchScreen::draw(sf::RenderWindow& window) {
     
     for (size_t i = 0; i < m_dots.size(); ++i) {
         int localIdx = (int)i % 11;
-        if (!hasRedCard(i)) {
+        if (!hasRedCard(i) || (int)i == m_sendOffGraceIdx) {
             window.draw(m_dots[i].shape);
         }
         
