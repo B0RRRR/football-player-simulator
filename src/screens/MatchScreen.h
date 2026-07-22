@@ -16,7 +16,10 @@ enum class VisualState {
     PassingScript,
     PressingScript,
     FoulChallenge, // the foul being committed - offender lunges into the victim
-    Foul           // dead ball on the spot, taker walks up
+    Foul,          // dead ball on the spot, taker walks up
+    FreeKickShot,  // a direct free kick near goal: wall is set, taker strikes it
+    ThrowIn,       // ball out over a touchline: taker walks over and throws it back in
+    Corner         // ball out over a goal line off a defender: crowded box, then the cross
 };
 
 // Beats of a scripted episode. These were bare ints (0,1,2,3,9..12,40..44,50..52,
@@ -192,6 +195,62 @@ private:
     int m_foulOffenderIdx = -1;      // who committed the foul (shown lunging in)
     bool m_foulOffenderIsHome = true; // remembered across the challenge -> free kick
     int m_sendOffGraceIdx = -1;      // a red-carded offender kept on screen until play restarts
+
+    // Direct free kick (wall + shot). Set up by setupFreeKick when the foul is within
+    // shooting range; played out by the FreeKickShot state.
+    bool m_fkDirect = false;         // this dead ball is a direct free kick, not a simple restart
+    bool m_fkUserTaker = false;      // the user is taking it (interactive timing bar)
+    bool m_fkAttackHome = true;      // the fouled (attacking) side is home
+    bool m_fkStruck = false;         // the ball has been struck at goal
+    bool m_fkResolved = false;       // the outcome has been registered with the engine
+    bool m_fkSuccess = false;        // the struck shot beats the keeper
+    bool m_fkHitWall = false;        // a failed kick that cannoned into the wall (vs flying wide)
+    float m_fkWindup = 0.f;          // AI taker's run-up timer before he strikes
+    int m_fkKeeperIdx = -1;          // the defending keeper (dot index)
+    int m_fkWall[4] = {-1,-1,-1,-1}; // defenders forming the wall
+    sf::Vector2f m_fkWallPos[4];     // where each wall defender must stand (re-asserted vs ambient)
+    int m_fkWallCount = 0;
+    ActionVariant m_fkVariant = ActionVariant::Default;
+
+    void strikeFreeKick(bool success, ActionVariant variant);
+    void registerFreeKickOutcome();
+
+    // Throw-ins. The ball leaving over a touchline used to just sit out of play until
+    // NormalPlay dragged it across the pitch to whichever carrier it picked.
+    int m_lastToucherIdx = -1;       // who touched the ball last (decides who concedes)
+    int m_throwInTaker = -1;
+    sf::Vector2f m_throwInSpot;
+    bool beginThrowInIfOut();
+
+    // The man taking a dead ball is exempt from updateDotMotion's keep-on-the-pitch clamp,
+    // so he can stand right on (or just behind) the line like a real thrower/corner taker.
+    int m_deadBallTakerIdx = -1;
+
+    // Corners: ball out over a goal line off a defender. Both boxes crowd, then the cross.
+    bool m_cornerAttackHome = true;  // the side attacking (taking the corner) is home
+    int m_cornerTaker = -1;
+    sf::Vector2f m_cornerSpot;
+    bool m_cornerUserTakes = false;  // user delivers it (midfielder / defender)
+    bool m_cornerUserHead = false;   // user attacks the cross in the box (forward)
+    bool m_cornerStruck = false;
+    bool m_cornerResolved = false;
+    bool m_cornerSuccess = false;        // it ends in a goal
+    bool m_cornerGoodDelivery = false;   // the cross actually found its man
+    bool m_cornerHeaderPending = false;  // user forward is timing his header on the incoming ball
+    bool m_cornerDeflecting = false;     // ball still rolling out over the byline off the keeper
+    sf::Vector2f m_cornerDeflectTarget;
+    bool m_cornerHeaded = false;         // the cross has been met; the finish is now in flight
+    sf::Vector2f m_cornerAimOffset;      // how far off the man a poor delivery lands
+    float m_cornerWindup = 0.f;
+    int m_cornerTargetIdx = -1;      // who the delivery is aimed at
+    int m_cornerCrowd[12] = {0};
+    sf::Vector2f m_cornerCrowdPos[12];
+    int m_cornerCrowdCount = 0;
+
+    void beginCorner(bool attackingHome, float outY);
+    void deliverCorner(bool good);
+    sf::Vector2f cornerAimPoint() const;
+    void registerCornerOutcome();
     // Fixed once when the foul is given. Recomputing these per frame made the victim's
     // target run 28px further away every frame - a treadmill that sent both players
     // sprinting off across the pitch.
@@ -223,6 +282,7 @@ private:
     bool m_passForward = true; // midfielder pass: forward (to a shot) vs sideways/back
     bool m_offsideRun = false; // this cross/through-ball episode: the striker mistimed his run
     bool m_offsidePassReleased = false; // the offside pass has been struck and is flying to him
+    bool m_boxFoulRolled = false;       // this attack has already rolled for a foul near the box
     int m_attackWingerIdx;
     float m_shotTargetY;
     int m_attackFwdIdx;
@@ -259,11 +319,12 @@ private:
     // every player mirrors the user's dribble.
     sf::Vector2f m_ambientAnchor;
     
-    // Player Controls
-    sf::Vector2f m_userMoveDir;
-    float m_dashTimer;
-    float m_dashSpeedBonus;
-    int m_userIdx;
+    // Player Controls. These are (re)set in initMinigame, but they're read from draw code
+    // and QTE handlers too, so give them sane defaults rather than leaving them garbage.
+    sf::Vector2f m_userMoveDir{1.f, 0.f};
+    float m_dashTimer = 0.f;
+    float m_dashSpeedBonus = 0.f;
+    int m_userIdx = 0;
     ActionVariant m_pendingVariant = ActionVariant::Default;
     MinigameActionKind m_pendingKind = MinigameActionKind::Shot;
     float m_ballLoftTimer = 0.f;

@@ -287,6 +287,46 @@ void MatchScreen::init() {
 
 
 void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
+    // Movement keys are cleared on release ALWAYS, not just while a minigame is running.
+    // The release used to be swallowed if the episode ended with a key still held, leaving
+    // the flag stuck on so the player kept running by himself in the next one.
+    if (event.type == sf::Event::KeyReleased) {
+        if (event.key.scancode == sf::Keyboard::Scan::W || event.key.scancode == sf::Keyboard::Scan::Up) m_keyUp = false;
+        if (event.key.scancode == sf::Keyboard::Scan::S || event.key.scancode == sf::Keyboard::Scan::Down) m_keyDown = false;
+        if (event.key.scancode == sf::Keyboard::Scan::A || event.key.scancode == sf::Keyboard::Scan::Left) m_keyLeft = false;
+        if (event.key.scancode == sf::Keyboard::Scan::D || event.key.scancode == sf::Keyboard::Scan::Right) m_keyRight = false;
+    }
+
+    // Direct free kick: the user times his shot on the bar even though the full minigame
+    // loop isn't running. Space or a left click locks the marker; grade decides the strike.
+    if (!m_minigameActive && m_visualState == VisualState::FreeKickShot
+        && m_fkUserTaker && !m_fkStruck && m_qte.isActive()) {
+        bool lockPress = (event.type == sf::Event::KeyPressed && event.key.scancode == sf::Keyboard::Scan::Space)
+                      || (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
+        if (lockPress) {
+            QTEResult r = m_qte.lock();
+            m_qteAccuracy = r.quality;
+            bool ok = (r.grade == QTEGrade::Perfect || r.grade == QTEGrade::Good);
+            strikeFreeKick(ok, ActionVariant::Default);
+            return;
+        }
+    }
+
+    // Corner: the same bar covers both roles - a midfielder/defender timing his delivery,
+    // and a forward timing his header on the incoming cross.
+    if (!m_minigameActive && m_visualState == VisualState::Corner && m_qte.isActive()) {
+        bool lockPress = (event.type == sf::Event::KeyPressed && event.key.scancode == sf::Keyboard::Scan::Space)
+                      || (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
+        if (lockPress) {
+            QTEResult r = m_qte.lock();
+            m_qteAccuracy = r.quality;
+            bool ok = (r.grade == QTEGrade::Perfect || r.grade == QTEGrade::Good);
+            if (m_cornerHeaderPending) { m_cornerHeaderPending = false; m_cornerSuccess = ok; }
+            else deliverCorner(ok);
+            return;
+        }
+    }
+
     if (!m_minigameActive) {
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
             sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); 
@@ -643,6 +683,7 @@ void MatchScreen::update(sf::Time deltaTime) {
                              || m_attackShape == AttackShape::ThroughBall)
                              && (rand() % 100 < 12);
                 m_offsidePassReleased = false;
+                m_boxFoulRolled = false;
             } else {
                 m_engine->commitEvent(m_pendingEvent);
                 m_visibleLogs.push_back(m_pendingEvent);
@@ -769,6 +810,7 @@ void MatchScreen::resolveShotQTE(const QTEResult& qte) {
 
     m_ballVelocity = dir * power;
     m_ballStruck = true; // released from the dribble - physics takes over from here
+    m_lastToucherIdx = m_userIdx; // we struck it, so we concede a throw-in if it goes out
     m_pendingKind = MinigameActionKind::Shot;
     m_pendingVariant = m_qteVariant;
     m_qteAccuracy = qte.quality;
@@ -1100,7 +1142,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         float len = std::hypot(dir.x, dir.y);
         bool moving = len > 0.f;
         if (moving) { dir.x /= len; dir.y /= len; } else { dir = m_userMoveDir; }
-        if (moving || m_dashTimer > 0.f) {
+        if (moving) { // no keys held = standing still, so no momentum into the ball
             float spd = (m_dashTimer > 0.f) ? (400.f + m_dashSpeedBonus) : 150.f;
             userVelocity = dir * spd;
         }
@@ -1136,6 +1178,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
             sf::Vector2f normal = sf::Vector2f(bPos.x - dPos.x, bPos.y - dPos.y);
             normal.x /= dist; normal.y /= dist;
             m_visualBall.setPosition(dPos.x + normal.x * (bRadius + dRadius), dPos.y + normal.y * (bRadius + dRadius));
+            m_lastToucherIdx = (int)i; // he deflected it - his side concedes any throw-in
 
             // Defenders make a controlled stop on contact; goalkeepers parry rather than
             // fully rebound. Everyone else keeps the original elastic-ish bounce.
@@ -1181,8 +1224,11 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     // their foot to strike/tackle/dive, so they don't get to keep jogging around.
     bool qteRunning = m_qte.isActive();
 
-    // Move if input is pressed OR if we are dashing
-    if (!qteRunning && ((moveInput.x != 0 || moveInput.y != 0) || m_dashTimer > 0.f)) {
+    // Movement needs a direction held. The dash only makes you FASTER - it used to be an
+    // alternative reason to move, so with no keys down the player was carried along the
+    // last m_userMoveDir (which starts as (1,0), i.e. straight at the opponents' goal) at
+    // dash speed until he hit the pitch clamp and parked on the goal line.
+    if (!qteRunning && (moveInput.x != 0 || moveInput.y != 0)) {
         float speed = 150.f; // Base speed
         if (m_dashTimer > 0) speed = 400.f + m_dashSpeedBonus; // Dashing speed is faster
 
@@ -1287,6 +1333,18 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
                 m_engine->processMinigameResult(buildMinigameResult(false, m_pendingKind, m_pendingVariant)); // Fail for attacker
             }
             endMinigame();
+            // Over a touchline it's a throw-in. Without this the ball was left sitting off
+            // the pitch and then shot across to whoever NormalPlay picked up as carrier.
+            if (!beginThrowInIfOut()) {
+                // Over a goal line: if a defender of that goal put it behind, it's a corner.
+                sf::Vector2f bp2 = m_visualBall.getPosition();
+                if (bp2.x < 40.f || bp2.x > 840.f) {
+                    bool crossedHomeGoal = (bp2.x < 40.f);   // home defends the left goal
+                    bool lastWasDefender = (m_lastToucherIdx >= 0)
+                                        && ((m_lastToucherIdx < 11) == crossedHomeGoal);
+                    if (lastWasDefender) beginCorner(!crossedHomeGoal, bp2.y);
+                }
+            }
         }
     }
 
@@ -1448,6 +1506,30 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         hint.setPosition(440.f, 620.f);
         window.draw(hint);
 
+        m_qte.draw(window, sf::Vector2f(440.f, 665.f));
+    }
+
+    // Set pieces run their timing bar outside the full minigame loop, so draw it (and its
+    // prompt) here as well.
+    bool fkBar = (m_visualState == VisualState::FreeKickShot && m_fkUserTaker);
+    bool cornerBar = (m_visualState == VisualState::Corner);
+    if ((fkBar || cornerBar) && m_qte.isActive()) {
+        auto& fkFont = AssetManager::get().getFont("MainFont");
+        sf::Text hint;
+        hint.setFont(fkFont);
+        hint.setCharacterSize(18);
+        hint.setFillColor(UITheme::Highlight);
+        if (cornerBar) {
+            hint.setString(m_cornerHeaderPending
+                ? "HEAD IT!  -  press SPACE in the green"
+                : "CORNER  -  press SPACE in the green to pick out a team-mate");
+        } else {
+            hint.setString("FREE KICK  -  press SPACE in the green to beat the wall");
+        }
+        sf::FloatRect hb = hint.getLocalBounds();
+        hint.setOrigin(hb.left + hb.width / 2.f, hb.top + hb.height / 2.f);
+        hint.setPosition(440.f, 620.f);
+        window.draw(hint);
         m_qte.draw(window, sf::Vector2f(440.f, 665.f));
     }
 }

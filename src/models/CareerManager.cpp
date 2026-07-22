@@ -369,13 +369,18 @@ void CareerManager::advanceDay(bool simulatePlayerClub, bool autoSave) {
     } else if (getDayType() == CalendarDayType::Match) {
         simulateMatchweek(simulatePlayerClub);
     }
-    // Advance internal day count
+    // Advance internal day count. weeksPlayed is DERIVED from the calendar (7 days = 1
+    // week) rather than counted independently: an independent counter could - and did -
+    // drift ahead of the real calendar (weeksPlayed 38 while only ~17 weeks had actually
+    // been played), which ended the season less than half way through and left every club
+    // on ~17 games. Deriving it makes that drift impossible and also self-heals old saves.
     m_day++;
-    if (m_day % 7 == 0) {
-        p->weeksPlayed++;
-        p->money += p->salary;
+    int newWeeks = m_day / 7;
+    if (newWeeks > p->weeksPlayed) {
+        p->money += p->salary * (newWeeks - p->weeksPlayed);
     }
-    
+    p->weeksPlayed = newWeeks;
+
     // Auto-save after every day transition
     if (autoSave) SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), this, &m_gameManager->getDatabase());
 }
@@ -717,6 +722,8 @@ void CareerManager::endSummerBreak() {
     
     m_isSummerBreak = false;
     m_day = 1; // Start of regular season
+    Player* p = m_gameManager->getPlayer();
+    if (p) p->weeksPlayed = 0; // keep the week counter in step with the reset calendar
 }
 
 void CareerManager::simulateInternationalMatches(bool simulatePlayerClub) {
