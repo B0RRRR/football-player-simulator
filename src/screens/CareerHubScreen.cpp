@@ -198,11 +198,6 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     while (cm->isSummerBreak()) {
                         cm->advanceDay();
                     }
-                } else if (btn.action == "Skip Summer") {
-                    CareerManager* cm = m_gameManager->getCareerManager();
-                    while (cm->isSummerBreak()) {
-                        cm->advanceDay();
-                    }
                 } else if (btn.action == "Upgrades") {
                     m_gameManager->changeScreen(std::make_shared<UpgradeScreen>());
                 } else if (btn.action == "League Table") {
@@ -297,11 +292,12 @@ void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                 } else if (btn.action == "Debug: Skip Training") {
                     if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Training) {
                         Player* p = m_gameManager->getPlayer();
-                        p->experience += 50;
+                        // Going through the motions: less than even a sloppy drill (5-30),
+                        // so skipping is never the optimal way to train. It used to pay 50,
+                        // i.e. more than a PERFECT session, which made playing them pointless.
+                        p->experience += 8;
                         m_gameManager->getCareerManager()->advanceDay();
                     }
-                } else if (btn.action == "Debug: Skip Season") {
-                    m_gameManager->getCareerManager()->skipSeason();
                 } else if (btn.action == "Debug: Skip Season") {
                     m_gameManager->getCareerManager()->skipSeason();
                 }
@@ -339,8 +335,15 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         std::string stats = "Name: " + p->name + "\n";
         stats += "Nationality: " + p->nationality + "\n";
         stats += "Position: " + posStr + "\n";
-        stats += "Shooting: " + std::to_string(p->shooting) + "\n";
-        stats += "Passing: " + std::to_string(p->passing) + "\n";
+        stats += "Overall: " + std::to_string(p->overall()) + "   Rating (" + posStr.substr(0, 3) + "): "
+               + std::to_string(p->positionalRating()) + "   Potential: " + std::to_string(p->potential) + "\n";
+        // Only the attributes his position uses - the rest aren't trainable and aren't his job.
+        std::string attrs;
+        if (p->usesShooting())    attrs += "Shooting: " + std::to_string(p->shooting) + "   ";
+        if (p->usesPassing())     attrs += "Passing: " + std::to_string(p->passing) + "   ";
+        if (p->usesTackling())    attrs += "Tackling: " + std::to_string(p->tackling) + "   ";
+        if (p->usesGoalkeeping()) attrs += "Goalkeeping: " + std::to_string(p->goalkeeping) + "   ";
+        stats += attrs + "\n";
         stats += "Morale: " + std::to_string(p->morale) + "\n";
         stats += "Energy: " + std::to_string(p->energy) + "%\n";
         stats += "XP: " + std::to_string(p->experience) + "\n";

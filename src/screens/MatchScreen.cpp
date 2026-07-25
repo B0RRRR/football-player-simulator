@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <vector>
 
-MatchScreen::MatchScreen() : m_engine(nullptr), m_minigameActive(false), m_isMinigameResultPending(false), m_simTimer(0.f), m_visualState(VisualState::Kickoff), m_stateTimer(0.f), m_ballCarrierIdx(-1) {}
 
 bool MatchScreen::hasRedCard(int globalIdx) const {
     if (!m_engine) return false;
@@ -301,12 +300,14 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
     // loop isn't running. Space or a left click locks the marker; grade decides the strike.
     if (!m_minigameActive && m_visualState == VisualState::FreeKickShot
         && m_fkUserTaker && !m_fkStruck && m_qte.isActive()) {
-        bool lockPress = (event.type == sf::Event::KeyPressed && event.key.scancode == sf::Keyboard::Scan::Space)
-                      || (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
+        bool lockPress = (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
         if (lockPress) {
             QTEResult r = m_qte.lock();
             m_qteAccuracy = r.quality;
-            bool ok = (r.grade == QTEGrade::Perfect || r.grade == QTEGrade::Good);
+            // From twelve yards you only have to keep it down and pick a side: anything but
+            // a badly mistimed strike goes in, which lands penalties near their real ~75%.
+            bool ok = m_fkPenalty ? (r.grade != QTEGrade::Miss)
+                                  : (r.grade == QTEGrade::Perfect || r.grade == QTEGrade::Good);
             strikeFreeKick(ok, ActionVariant::Default);
             return;
         }
@@ -315,8 +316,7 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
     // Corner: the same bar covers both roles - a midfielder/defender timing his delivery,
     // and a forward timing his header on the incoming cross.
     if (!m_minigameActive && m_visualState == VisualState::Corner && m_qte.isActive()) {
-        bool lockPress = (event.type == sf::Event::KeyPressed && event.key.scancode == sf::Keyboard::Scan::Space)
-                      || (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
+        bool lockPress = (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left);
         if (lockPress) {
             QTEResult r = m_qte.lock();
             m_qteAccuracy = r.quality;
@@ -376,6 +376,55 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
         }
     }
     
+    // Mouse play. LMB shoots (and locks the timing bar), RMB passes - both aimed at the
+    // exact point clicked, which is finer than the eight directions WASD can express.
+    // Movement stays on WASD, so neither button is tied up holding a direction.
+    if (m_minigameActive && event.type == sf::Event::MouseButtonPressed
+        && m_userIdx >= 0 && m_userIdx < (int)m_dots.size()) {
+        Player* p = m_gameManager->getPlayer();
+        // Map through the match camera explicitly - it zooms during episodes, and the
+        // window's own view is the HUD one by the time events are polled.
+        sf::Vector2f aim = window.mapPixelToCoords(sf::Vector2i(event.mouseButton.x, event.mouseButton.y), m_camera);
+
+        // Read-and-dive save: the first click commits the keeper's dive to that height.
+        if (m_gkDiveMode && !m_gkDived && event.mouseButton.button == sf::Mouse::Left) {
+            resolveGkDive(aim.y);
+            return;
+        }
+
+        sf::Vector2f myPos = m_dots[m_userIdx].shape.getPosition();
+        sf::Vector2f toAim = aim - myPos;
+        float aimLen = std::hypot(toAim.x, toAim.y);
+        if (aimLen > 1.f) m_userMoveDir = sf::Vector2f(toAim.x / aimLen, toAim.y / aimLen);
+        m_mouseAimWorld = aim;
+        m_mouseAimValid = true;
+
+        sf::Vector2f bPos = m_visualBall.getPosition();
+        float distToBall = std::hypot(bPos.x - myPos.x, bPos.y - myPos.y);
+        bool hasBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+        bool ctrlHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::RControl);
+        bool shiftHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::LShift) || sf::Keyboard::isKeyPressed(sf::Keyboard::RShift);
+
+        if (event.mouseButton.button == sf::Mouse::Left) {
+            if (m_qte.isActive()) {
+                resolveQTE(m_qte.lock());
+            } else if (!hasBall && p->position != PlayerPosition::Goalkeeper && distToBall < 25.f) {
+                startQTE(MinigameActionKind::Tackle, ActionVariant::Slide, false);
+            } else if (hasBall && distToBall < 20.f) {
+                startQTE(MinigameActionKind::Shot,
+                         ctrlHeld ? ActionVariant::Finesse : ActionVariant::Power, ctrlHeld);
+            }
+            return;
+        }
+        if (event.mouseButton.button == sf::Mouse::Right) {
+            if (!m_qte.isActive() && hasBall && distToBall < 20.f) {
+                startQTE(MinigameActionKind::Pass,
+                         shiftHeld ? ActionVariant::Lofted : ActionVariant::Default, shiftHeld);
+            }
+            return;
+        }
+    }
+
     if (m_minigameActive) {
         // Use physical scancodes rather than localized Key codes: sf::Keyboard::W etc.
         // are remapped by the active keyboard layout (e.g. a Cyrillic layout), so on a
@@ -392,36 +441,14 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
             sf::Vector2f bPos = m_visualBall.getPosition();
             float distToBall = std::hypot(bPos.x - myPos.x, bPos.y - myPos.y);
 
-            bool isSpace = (event.key.scancode == sf::Keyboard::Scan::Space);
             bool isShift = (event.key.scancode == sf::Keyboard::Scan::LShift || event.key.scancode == sf::Keyboard::Scan::RShift);
-            bool isE = (event.key.scancode == sf::Keyboard::Scan::E);
-            bool isQ = (event.key.scancode == sf::Keyboard::Scan::Q);
-            bool ctrlHeld = event.key.control;
 
-            // What Space does depends on whether we're ON the ball, not on our nominal
-            // position: a defender who has just won it can shoot and pass like anyone else.
-            bool hasBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+            // Shooting, passing, tackling and locking the timing bar are all on the mouse
+            // now (LMB shoot/tackle, RMB pass - see the mouse handler above). The keyboard
+            // only moves the player: WASD to run, Shift to sprint.
+            (void)myPos; (void)bPos; (void)distToBall;
 
-            if (m_qte.isActive()) {
-                // A QTE is running: Space locks the marker. Everything else is ignored,
-                // the action is already committed.
-                if (isSpace) resolveQTE(m_qte.lock());
-            } else if (isSpace) {
-                if (!hasBall && p->position != PlayerPosition::Goalkeeper && distToBall < 25.f) {
-                    // We're defending: go and win it back.
-                    startQTE(MinigameActionKind::Tackle, ActionVariant::Slide, false);
-                } else if (hasBall && distToBall < 20.f) {
-                    bool finesse = ctrlHeld;
-                    startQTE(MinigameActionKind::Shot,
-                             finesse ? ActionVariant::Finesse : ActionVariant::Power,
-                             finesse);
-                }
-            } else if (hasBall && distToBall < 20.f && (isE || isQ)) {
-                // E = ground pass, Q = lofted/through ball (riskier, tighter window)
-                startQTE(MinigameActionKind::Pass,
-                         isQ ? ActionVariant::Lofted : ActionVariant::Default,
-                         isQ);
-            } else if (isShift && m_dashTimer <= 0.f) {
+            if (isShift && m_dashTimer <= 0.f) {
                 // Shift = dash. The goalkeeper's save is now a reaction QTE, so the dash
                 // is purely for repositioning before the shot comes in.
                 if (p->position == PlayerPosition::Goalkeeper) {
@@ -467,6 +494,8 @@ void MatchScreen::endMinigame() {
     m_ballFriction = 1.5f;
     m_currentZoom = 1.0f;
     m_camera = m_uiView;
+    m_gkDiveMode = false;
+    m_gkDived = false;
 }
 
 void MatchScreen::resolveQTE(const QTEResult& result) {
@@ -790,9 +819,17 @@ void MatchScreen::resolveShotQTE(const QTEResult& qte) {
     float scatter = (distToGoal / 26.f) * ((rand() % 100) / 100.f);
     aimError += scatter;
 
-    // Aim for a corner on a good strike; error pushes it away from the frame.
-    float side = (rand() % 2 == 0) ? -1.f : 1.f;
-    float targetY = 290.f + side * (18.f + aimError);
+    // Aim for a corner on a good strike; error pushes it away from the frame. If the shot
+    // was played with the mouse, the click picks the spot in the goal instead of a coin flip.
+    float targetY;
+    if (m_mouseAimValid) {
+        float want = std::clamp(m_mouseAimWorld.y, 250.f, 330.f);
+        float side = (want >= 290.f) ? 1.f : -1.f; // mistiming drags it further off that way
+        targetY = want + side * aimError;
+    } else {
+        float side = (rand() % 2 == 0) ? -1.f : 1.f;
+        targetY = 290.f + side * (18.f + aimError);
+    }
     m_shotTargetY = targetY;
 
     sf::Vector2f dir(goalX - origin.x, targetY - origin.y);
@@ -839,6 +876,13 @@ int MatchScreen::pickPassTarget() const {
 
         // Facing dominates; distance is a mild tie-breaker.
         float score = facing * 100.f - dist * 0.25f;
+
+        // Played with the mouse: the ball goes to whoever is nearest the point clicked, so
+        // you pick the man rather than hoping the facing heuristic guesses him.
+        if (m_mouseAimValid) {
+            sf::Vector2f toClick = m_dots[i].shape.getPosition() - m_mouseAimWorld;
+            score = -std::hypot(toClick.x, toClick.y);
+        }
         if (score > bestScore) {
             bestScore = score;
             best = i;
@@ -960,6 +1004,37 @@ void MatchScreen::resolveTackleQTE(const QTEResult& qte) {
     endMinigame();
 }
 
+void MatchScreen::resolveGkDive(float diveY) {
+    Player* p = m_gameManager->getPlayer();
+    m_gkDived = true;
+    m_gkDiveY = std::clamp(diveY, 232.f, 348.f); // he can dive a touch beyond the posts
+
+    // How much of the goal one dive covers, from his goalkeeping. A committed dive that is
+    // very late (the ball already almost on him) can't get down in time, so its reach is cut.
+    float reach = 22.f + p->goalkeeping * 0.28f; // gk 50 -> 36, gk 90 -> 47 (goal is 80 tall)
+    float frac = m_gkShotClock / std::max(0.1f, m_gkFlightTime);
+    if (frac > 0.85f) reach *= 0.55f;               // dived too late
+    else if (frac < 0.12f) reach *= 0.75f;          // committed before reading it - guessy
+
+    bool saved = std::abs(m_gkDiveY - m_shotTargetY) < reach;
+    m_gkDiveSaved = saved;
+    m_qteAccuracy = std::clamp(1.f - std::abs(m_gkDiveY - m_shotTargetY) / 80.f, 0.f, 1.f);
+
+    if (saved) {
+        // He gets there. Parry it clear and end the episode; the wrong-dive case instead
+        // lets the ball run into the net and the goal-line check concedes it.
+        m_gkDiveMode = false;
+        float dirX = m_engine->isHome() ? 1.f : -1.f;
+        float lateral = ((rand() % 100) - 50) / 50.f * 200.f;
+        m_ballVelocity = sf::Vector2f(dirX * 380.f, lateral);
+        m_ballFriction = 1.5f;
+        m_engine->processMinigameResult(buildMinigameResult(true, MinigameActionKind::Save, ActionVariant::Dive));
+        endMinigame();
+    }
+    // If not saved: keep m_gkDiveMode on so he keeps lunging the wrong way while the ball
+    // flies past into the net; updateMinigame's goal-line detection concedes it.
+}
+
 void MatchScreen::resolveSaveQTE(const QTEResult& qte) {
     // Time it right and the keeper parries; miss it and the shot goes in.
     bool saved = (qte.grade == QTEGrade::Perfect || qte.grade == QTEGrade::Good);
@@ -1009,6 +1084,10 @@ void MatchScreen::initMinigame() {
     m_keyDown = false;
     m_keyLeft = false;
     m_keyRight = false;
+    m_gkDiveMode = false;
+    m_gkDived = false;
+    m_gkDiveSaved = false;
+    m_gkShotClock = 0.f;
 
     Player* p = m_gameManager->getPlayer();
     int userPosIdx = 0;
@@ -1059,41 +1138,82 @@ void MatchScreen::initMinigame() {
         // the distance so it takes ~1.4s to reach the line whatever the range - long enough
         // that the save QTE below (~0.9-1.3s) always resolves before the ball arrives.
         m_ballFriction = 0.25f;
-        m_ballVelocity = dir * std::max(len * 0.85f, 150.f);
+        float shotSpeed = std::max(len * 0.85f, 150.f);
+        m_ballVelocity = dir * shotSpeed;
 
-        // The save is a reaction test: the bar arms itself the moment the shot is
-        // struck. Lock it in the zone to parry, miss it (or let it expire) and it's a
-        // goal. A single pass of the marker - the keeper gets one chance, like in life.
-        startQTE(MinigameActionKind::Save, ActionVariant::Dive, false, 1.0f);
+        // Read-and-dive save (not a timing bar): the keeper judges the flight and commits a
+        // dive to a side. He saves it if he picks the right corner, so it's a genuine read,
+        // not a reaction press. Set up the dive window and mark the flight for the handler.
+        m_qteKind = MinigameActionKind::Save; // so the shot-flight collision skip still applies
+        m_gkDiveMode = true;
+        m_gkDived = false;
+        m_gkDiveSaved = false;
+        m_gkShotClock = 0.f;
+        m_gkFlightTime = (shotSpeed > 1.f) ? (len / shotSpeed) : 1.4f;
+        m_gkGoalLineX = userIsHome ? 45.f : 835.f;
+        m_gkDiveY = 290.f;
     }
 }
 
 void MatchScreen::updateMinigame(sf::Time deltaTime) {
     float dt = deltaTime.asSeconds();
     m_minigameTimer += dt;
-    
+
+    // Read-and-dive save: run its own clock, lunge the keeper to the corner he picked, and
+    // if he never commits by the time the ball arrives he is beaten (the goal-line check
+    // below concedes it).
+    if (m_gkDiveMode) {
+        m_gkShotClock += dt;
+        // Safety net: the ball should always reach the line and be conceded there, but if it
+        // ever doesn't, don't leave the keeper frozen mid-dive forever.
+        if (m_gkShotClock > m_gkFlightTime + 1.5f) {
+            m_gkDiveMode = false;
+            m_engine->processMinigameResult(buildMinigameResult(m_gkDiveSaved, MinigameActionKind::Save, ActionVariant::Dive));
+            endMinigame();
+            return;
+        }
+        if (m_gkDived && m_userIdx >= 0 && m_userIdx < (int)m_dots.size()) {
+            sf::Vector2f target(m_gkGoalLineX, m_gkDiveY);
+            sf::Vector2f cur = m_dots[m_userIdx].shape.getPosition();
+            sf::Vector2f d = target - cur;
+            float len = std::hypot(d.x, d.y);
+            float step = 520.f * dt; // a committed dive is quick
+            if (len <= step) m_dots[m_userIdx].shape.setPosition(target);
+            else m_dots[m_userIdx].shape.move(d.x / len * step, d.y / len * step);
+        }
+    }
+
     // Zoom camera towards the ball
     sf::Vector2f ballPos = m_visualBall.getPosition();
     
-    // Target zoom is 0.5 (2x zoom)
-    float targetZoom = 0.5f;
+    // A struck shot heads for a goal at x~35/845. The tight pitch clamp below pinned the
+    // goalmouth to the very edge of the zoomed view, so you couldn't tell a save from a
+    // goal. While a shot is in flight, follow the ball right up to the goal (a little grass
+    // behind the net is fine) and pull the zoom back a touch so the keeper is framed too.
+    bool shotInFlight = (m_ballStruck && m_pendingKind == MinigameActionKind::Shot) || m_gkDiveMode;
+
+    float targetZoom = shotInFlight ? 0.6f : 0.5f;
     m_currentZoom += (targetZoom - m_currentZoom) * 2.0f * dt;
-    
-    // Calculate target center, clamped to pitch boundaries so we don't show off-pitch area
+
     sf::Vector2f targetCenter = ballPos;
     float viewWidth = 1280.f * m_currentZoom;
     float viewHeight = 720.f * m_currentZoom;
-    
+
     // Pitch bounds: X [40, 840], Y [130, 450]
-    // To allow some margin, let's clamp center:
-    float minX = 40.f + viewWidth / 2.f;
-    float maxX = 840.f - viewWidth / 2.f;
     float minY = 130.f + viewHeight / 2.f;
     float maxY = 450.f - viewHeight / 2.f;
-    
-    if (minX > maxX) targetCenter.x = 440.f; // If view is wider than pitch, just center
-    else targetCenter.x = std::clamp(targetCenter.x, minX, maxX);
-    
+
+    if (shotInFlight) {
+        // Keep some context but let the frame reach the goals, so the ball is always seen
+        // crossing the line (or being kept out) rather than sitting off-screen at the edge.
+        targetCenter.x = std::clamp(ballPos.x, 250.f, 630.f);
+    } else {
+        float minX = 40.f + viewWidth / 2.f;
+        float maxX = 840.f - viewWidth / 2.f;
+        if (minX > maxX) targetCenter.x = 440.f;
+        else targetCenter.x = std::clamp(targetCenter.x, minX, maxX);
+    }
+
     if (minY > maxY) targetCenter.y = 290.f;
     else targetCenter.y = std::clamp(targetCenter.y, minY, maxY);
     
@@ -1154,7 +1274,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     Player* userPlayer = m_gameManager->getPlayer();
     // An incoming shot at the keeper should reach the keeper. Everyone else is a frozen
     // dot standing in its path, and bouncing off them turned the shot into a pinball.
-    bool saveFlight = (m_qte.isActive() && m_qteKind == MinigameActionKind::Save);
+    bool saveFlight = (m_qte.isActive() && m_qteKind == MinigameActionKind::Save) || m_gkDiveMode;
 
     // NOTE: this guard deliberately keys off `dribbling`, not "the ball is ours". While we
     // still have it at our feet the ball is glued to us and nobody may knock it away (an
@@ -1162,7 +1282,10 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     // moment it is STRUCK it becomes a real ball again and everyone can block it - keeping
     // the skip alive past the strike is what let shots sail straight through the keeper.
 
-    for (size_t i = 0; i < m_dots.size(); ++i) {
+    // In dive mode the save is decided deterministically by the keeper's read, so no dot
+    // (not even the keeper) bounces the ball - otherwise a wrong dive that happened to graze
+    // the ball would parry it by accident.
+    for (size_t i = 0; i < m_dots.size() && !m_gkDiveMode; ++i) {
         auto& d = m_dots[i];
         bool isUserDot = ((int)i == m_userIdx);
         if ((saveFlight || dribbling) && !isUserDot) continue;
@@ -1228,7 +1351,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     // alternative reason to move, so with no keys down the player was carried along the
     // last m_userMoveDir (which starts as (1,0), i.e. straight at the opponents' goal) at
     // dash speed until he hit the pitch clamp and parked on the goal line.
-    if (!qteRunning && (moveInput.x != 0 || moveInput.y != 0)) {
+    if (!qteRunning && !m_gkDiveMode && (moveInput.x != 0 || moveInput.y != 0)) {
         float speed = 150.f; // Base speed
         if (m_dashTimer > 0) speed = 400.f + m_dashSpeedBonus; // Dashing speed is faster
 
@@ -1293,6 +1416,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
             // straight through, so a shot the QTE placed on target was an automatic goal
             // no matter how well the keeper was set or how far out you struck it. A shot
             // tucked into the corner still mostly beats him; a central one he often stops.
+            bool parriedBehind = false;
             if (success && m_pendingKind == MinigameActionKind::Shot) {
                 int gkStrength = m_engine->getOpponentClub() ? m_engine->getOpponentClub()->strength : 65;
                 float centrality = std::clamp(1.f - std::abs(m_shotTargetY - 290.f) / 40.f, 0.f, 1.f);
@@ -1307,9 +1431,21 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
                     success = false; // saved - not a goal
                     // Park the ball at the keeper so it visibly stops there instead of
                     // rippling the net.
+                    // Bring the KEEPER to the ball, not the ball to the keeper. Teleporting
+                    // the ball onto a keeper who was still tracking across looked like it
+                    // rebounded off thin air. Now he's shown reaching the shot ON the line,
+                    // and the ball is parked at that contact point.
                     int gkIdx = (bPos.x < 50.f) ? 0 : 11;
-                    m_visualBall.setPosition(m_dots[gkIdx].shape.getPosition());
+                    float lineX = (bPos.x < 50.f) ? 45.f : 835.f;
+                    sf::Vector2f contact(lineX, std::clamp(bPos.y, 250.f, 330.f));
+                    m_dots[gkIdx].shape.setPosition(contact);
+                    m_visualBall.setPosition(contact);
                     m_ballVelocity = sf::Vector2f(0.f, 0.f);
+                    // He can't always hold it. Half the time he can only push it behind,
+                    // which is a CORNER - it used to always come back as a goal kick,
+                    // because a saved shot is reported as a plain Miss and the corner roll
+                    // in the episode resolution only looks at Saved.
+                    parriedBehind = (rand() % 100 < 50);
                 }
             }
 
@@ -1319,6 +1455,9 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
                                      : m_pendingKind;
             m_engine->processMinigameResult(buildMinigameResult(success, kind, m_pendingVariant));
             endMinigame();
+            // Parried behind: the corner is set up from the keeper's position, so the ball
+            // visibly runs off him and over the byline first.
+            if (parriedBehind) beginCorner(bPos.x > 830.f, m_shotTargetY);
         }
     }
 
@@ -1422,7 +1561,23 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         }
     }
     window.draw(m_visualBall);
-    
+
+    // Read-and-dive save: highlight the goal mouth the keeper is defending so the two dive
+    // halves read clearly. It shows the target area, never where the shot is going.
+    if (m_gkDiveMode) {
+        float gx = (m_gkGoalLineX < 440.f) ? 40.f : 810.f;
+        sf::RectangleShape mouth(sf::Vector2f(30.f, 80.f));
+        mouth.setPosition(gx, 250.f);
+        mouth.setFillColor(sf::Color(80, 160, 255, 45));
+        mouth.setOutlineThickness(2.f);
+        mouth.setOutlineColor(sf::Color(120, 190, 255, 160));
+        window.draw(mouth);
+        sf::RectangleShape mid(sf::Vector2f(30.f, 2.f));
+        mid.setPosition(gx, 289.f);
+        mid.setFillColor(sf::Color(120, 190, 255, 120));
+        window.draw(mid);
+    }
+
     if (m_minigameActive) {
         sf::Vector2f userPos = m_dots[m_userIdx].shape.getPosition();
 
@@ -1479,20 +1634,24 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         bool hasBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
         std::string controls;
         if (p->position == PlayerPosition::Goalkeeper) {
-            controls = "SHIFT - rush off the line   |   SPACE - time the save";
+            controls = "Read the shot, then CLICK the corner you dive to";
         } else if (hasBall) {
-            controls = "WASD - move   |   SPACE - shoot (CTRL: finesse)   |   E - pass   |   Q - through ball   |   SHIFT - sprint";
+            controls = "WASD - move   |   LMB - shoot where you click (CTRL: finesse)   |   RMB - pass there (SHIFT: lofted)   |   SHIFT - sprint";
         } else {
-            controls = "WASD - close down   |   SHIFT - sprint   |   SPACE - tackle";
+            controls = "WASD - close down   |   SHIFT - sprint   |   LMB - tackle";
         }
 
-        if (m_qte.isActive()) {
+        if (m_gkDiveMode && !m_gkDived) {
+            hint.setString("SHOT INCOMING  -  CLICK the corner to dive!");
+            hint.setCharacterSize(18);
+            hint.setFillColor(UITheme::Highlight);
+        } else if (m_qte.isActive()) {
             std::string label;
             switch (m_qteKind) {
-                case MinigameActionKind::Save:   label = "SAVE IT!  -  press SPACE in the green"; break;
-                case MinigameActionKind::Tackle: label = "TACKLE  -  press SPACE in the green"; break;
-                case MinigameActionKind::Pass:   label = "PASS  -  press SPACE in the green"; break;
-                default:                         label = "SHOOT  -  press SPACE in the green"; break;
+                case MinigameActionKind::Save:   label = "SAVE IT!  -  press LMB in the green"; break;
+                case MinigameActionKind::Tackle: label = "TACKLE  -  press LMB in the green"; break;
+                case MinigameActionKind::Pass:   label = "PASS  -  press LMB in the green"; break;
+                default:                         label = "SHOOT  -  press LMB in the green"; break;
             }
             hint.setString(label);
             hint.setCharacterSize(18);
@@ -1521,10 +1680,11 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         hint.setFillColor(UITheme::Highlight);
         if (cornerBar) {
             hint.setString(m_cornerHeaderPending
-                ? "HEAD IT!  -  press SPACE in the green"
-                : "CORNER  -  press SPACE in the green to pick out a team-mate");
+                ? "HEAD IT!  -  press LMB in the green"
+                : "CORNER  -  press LMB in the green to pick out a team-mate");
         } else {
-            hint.setString("FREE KICK  -  press SPACE in the green to beat the wall");
+            hint.setString(m_fkPenalty ? "PENALTY  -  press LMB in the green to bury it"
+                                   : "FREE KICK  -  press LMB in the green to beat the wall");
         }
         sf::FloatRect hb = hint.getLocalBounds();
         hint.setOrigin(hb.left + hb.width / 2.f, hb.top + hb.height / 2.f);

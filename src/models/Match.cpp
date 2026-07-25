@@ -137,8 +137,8 @@ void Match::evaluateCoachDecision() {
     }
 
     int clubStr = m_player->currentClub->strength;
-    int playerStr = (m_player->shooting + m_player->passing + m_player->tackling + m_player->goalkeeping) / 4; 
-    
+    int playerStr = m_player->positionalRating(); // judged on his position, like MatchEngine
+
     // Apply morale modifier (-10 to +10)
     int moraleModifier = (m_player->morale - 50) / 5;
     playerStr += moraleModifier;

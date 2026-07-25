@@ -6,8 +6,8 @@
 GameManager::GameManager() 
 {
     m_database.init();
-    m_player = new Player("My Player");
-    m_careerManager = new CareerManager(this);
+    m_player = std::make_unique<Player>("My Player");
+    m_careerManager = std::make_unique<CareerManager>(this);
 
     // Initialize window based on settings
     int style = g_settings.isFullscreen ? sf::Style::Fullscreen : sf::Style::Default;
@@ -22,10 +22,7 @@ GameManager::GameManager()
     AssetManager::get().loadFont("MainFont", "assets/fonts/Roboto-Regular.ttf");
 }
 
-GameManager::~GameManager() {
-    delete m_careerManager;
-    delete m_player;
-}
+GameManager::~GameManager() = default;
 
 
 void GameManager::changeScreen(std::shared_ptr<Screen> screen) {

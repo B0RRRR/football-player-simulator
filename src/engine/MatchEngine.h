@@ -118,6 +118,12 @@ public:
     // the man sent off matches the one the visual challenge shows committing the foul.
     // Leaves a user sending-off (-1) alone and won't duplicate a player already off.
     void setLastRedCardPlayer(bool isHome, int localIdx);
+
+    // Local dot index of the user's own player (GK 0, Def 3, Mid 7, Fwd 10) - the same
+    // mapping the pitch view uses.
+    int userDotIndex() const;
+    // Take the user out of the match for good and hand him a two-match ban.
+    void sendUserOff(const std::string& reason);
     bool isUserSubbedOff() const { return m_userSubbedOff; }
     std::string getUserStartReason() const { return m_userStartReason; }
 
@@ -154,4 +160,10 @@ private:
     
     std::queue<MatchEvent> m_logs;
     std::vector<float> m_momentumHistory;
+    // Live momentum (+ = home). Decays toward neutral and is pushed by real incidents;
+    // sampled into m_momentumHistory once a minute for the bar.
+    float m_momentum = 0.0f;
+public:
+    void applyMomentum(float delta);
+private:
 };

@@ -73,3 +73,19 @@ target_link_libraries(football_sim sfml-graphics sfml-window sfml-system sfml-au
 
 # Copy assets folder to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+# Headless engine tests. Off by default (needs no SFML, but the main build shouldn't grow a
+# second binary unasked). Enable with: cmake -B build -DBUILD_TESTS=ON, then ctest or run
+# ./build/engine_tests directly.
+option(BUILD_TESTS "Build the headless engine tests" OFF)
+if(BUILD_TESTS)
+    enable_testing()
+    add_executable(engine_tests
+        tests/engine_tests.cpp
+        src/engine/MatchEngine.cpp
+        src/models/Player.cpp
+        src/models/Database.cpp
+        src/models/NameGenerator.cpp
+    )
+    add_test(NAME engine_tests COMMAND engine_tests)
+endif()

@@ -20,16 +20,16 @@ public:
     // Access to window for screens that might need it
     sf::RenderWindow& getWindow() { return m_window; }
 
-    Player* getPlayer() { return m_player; }
+    Player* getPlayer() { return m_player.get(); }
     Database& getDatabase() { return m_database; }
-    CareerManager* getCareerManager() { return m_careerManager; }
+    CareerManager* getCareerManager() { return m_careerManager.get(); }
 
 private:
     sf::RenderWindow m_window;
     sf::View m_view;
     std::shared_ptr<Screen> m_currentScreen;
     std::shared_ptr<Screen> m_pendingScreen;
-    Player* m_player;
+    std::unique_ptr<Player> m_player;
     Database m_database;
-    CareerManager* m_careerManager;
+    std::unique_ptr<CareerManager> m_careerManager;
 };

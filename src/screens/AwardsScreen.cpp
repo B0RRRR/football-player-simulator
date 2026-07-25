@@ -90,7 +90,7 @@ void AwardsScreen::processAwards() {
         rp.avgRating = p->matchesPlayedThisSeason > 0 ? (p->totalSeasonRating / p->matchesPlayedThisSeason) : 0.0f;
         rp.isReal = true;
         rp.league = clubToLeague[rp.club];
-        rp.overall = (p->shooting + p->passing + p->tackling + p->goalkeeping) / 4;
+        rp.overall = p->overall();
         
         globalPlayers.push_back(rp);
         if (!playerLeague.empty()) {

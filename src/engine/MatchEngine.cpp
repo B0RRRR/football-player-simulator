@@ -26,13 +26,20 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
     bool userIsPlaying = true;
     if (m_player) {
         int clubStr = m_playerClub->strength;
-        int playerStr = (m_player->shooting + m_player->passing + m_player->tackling + m_player->goalkeeping) / 4;
+        // Judge him on his own position, not the flat average of all four stats - a striker
+        // used to be benched for having low goalkeeping, so a specialist could ride the
+        // bench all season despite being good at his actual job.
+        int playerStr = m_player->positionalRating();
         playerStr += (m_player->morale - 50) / 5; // Morale modifier
 
         if (m_player->injuredDays > 0) {
             userIsPlaying = false; m_userStartReason = "Status: INJURED";
         } else if (m_player->suspensionMatches > 0) {
             userIsPlaying = false; m_userStartReason = "Status: SUSPENDED";
+            // Sitting this fixture out serves one match of the ban. Without this it only
+            // ever counted down from the debug "Skip Match" button, so a red card banned
+            // the player permanently in normal play.
+            m_player->suspensionMatches--;
         } else if (m_player->coachTrust < 30.0f) {
             userIsPlaying = false; m_userStartReason = "Status: BENCHED (Low Trust)";
         } else if (m_player->energy < 50.0f) {
@@ -74,16 +81,30 @@ MatchEvent MatchEngine::popRecentLog() {
     return log;
 }
 
+void MatchEngine::applyMomentum(float delta) {
+    m_momentum += delta;
+    if (m_momentum > 100.0f) m_momentum = 100.0f;
+    if (m_momentum < -100.0f) m_momentum = -100.0f;
+}
+
 void MatchEngine::commitEvent(const MatchEvent& event) {
     // This is called by MatchScreen when the animation is completely finished.
     // We update stats based on event type.
+    // Each incident also swings the momentum bar, weighted by how big it actually was -
+    // a goal is not the same as a blocked shot, which is what the old flat model implied.
     if (event.type == EventType::Goal) {
         if (event.isHome) { m_homeStats.goals++; m_homeStats.shots++; }
         else { m_awayStats.goals++; m_awayStats.shots++; }
+        applyMomentum(event.isHome ? 38.0f : -38.0f);
     } else if (event.type == EventType::Chance) {
         if (event.isHome) m_homeStats.shots++;
         else m_awayStats.shots++;
+        applyMomentum(event.isHome ? 9.0f : -9.0f);
     } else if (event.type == EventType::Card) {
+        // event.isHome is the OFFENDING side, so a card swings momentum against them.
+        applyMomentum(event.outcome == EventOutcome::RedCard
+                          ? (event.isHome ? -20.0f : 20.0f)
+                          : (event.isHome ? -5.0f : 5.0f));
         if (event.outcome == EventOutcome::RedCard) {
             if (event.isHome) m_homeStats.redCards++;
             else m_awayStats.redCards++;
@@ -110,6 +131,23 @@ void MatchEngine::commitEvent(const MatchEvent& event) {
     }
 }
 
+int MatchEngine::userDotIndex() const {
+    if (!m_player) return -1;
+    switch (m_player->position) {
+        case PlayerPosition::Defender:   return 3;
+        case PlayerPosition::Midfielder: return 7;
+        case PlayerPosition::Forward:    return 10;
+        default:                         return 0; // goalkeeper
+    }
+}
+
+void MatchEngine::sendUserOff(const std::string& reason) {
+    if (m_userSubbedOff) return;
+    m_userSubbedOff = true;
+    m_userStartReason = reason;
+    if (m_player) m_player->suspensionMatches = 2;
+}
+
 void MatchEngine::setLastRedCardPlayer(bool isHome, int localIdx) {
     std::vector<int>& list = isHome ? m_homeRedCards : m_awayRedCards;
     if (list.empty()) return;
@@ -117,6 +155,17 @@ void MatchEngine::setLastRedCardPlayer(bool isHome, int localIdx) {
     if (localIdx <= 0 || localIdx > 10) return;
     // Don't collapse two sent-off players onto the same dot.
     for (size_t i = 0; i + 1 < list.size(); ++i) if (list[i] == localIdx) return;
+
+    // If the shirt going off is the user's own dot then it IS him. Record it as the user
+    // (-1) and put him off properly: his dot vanished before, but the engine still thought
+    // he was playing, so it kept handing him minigames, kept his marker on the HUD and
+    // never gave him a ban.
+    if (isHome == m_isHome && localIdx == userDotIndex()) {
+        list.back() = -1;
+        sendUserOff("Status: SENT OFF (Red Card)");
+        return;
+    }
+
     list.back() = localIdx;
 }
 
@@ -143,9 +192,7 @@ void MatchEngine::updateMinute() {
     
     if (m_minute == m_userRedCardMinute && !m_userSubbedOff && m_homeRedCards.empty() && m_awayRedCards.empty()) {
         addLog("RED CARD! [USER]", EventType::Card, m_isHome, EventOutcome::RedCard);
-        m_userSubbedOff = true;
-        m_userStartReason = "Status: SENT OFF (Red Card)";
-        m_player->suspensionMatches = 2; // user suspended
+        sendUserOff("Status: SENT OFF (Red Card)");
         // Record the sent-off player (-1 = the user). The redCards STAT is incremented
         // once, in commitEvent, so it isn't double-counted.
         if (m_isHome) m_homeRedCards.push_back(-1);
@@ -172,11 +219,18 @@ void MatchEngine::updateMinute() {
     if (playerTeamChance < 2) playerTeamChance = 2;
     if (oppTeamChance < 2) oppTeamChance = 2;
     
-    float baseMomentum = (m_isHome ? (pStrength - oStrength) : (oStrength - pStrength)); 
-    float currentMomentum = baseMomentum + ((rand() % 40) - 20);
-    
+    // Momentum is a live, event-driven value (the Sofascore-style bar): it fades back to
+    // neutral in quiet spells and real incidents push it (see applyMomentum in commitEvent).
+    // It used to be a CONSTANT strength gap (up to +-30, as big as an attack itself) plus
+    // +-20 of noise every minute, so the bar mostly showed who was better on paper.
+    float strengthDiff = (m_isHome ? (pStrength - oStrength) : (oStrength - pStrength)); // + = home
+
+    m_momentum *= 0.86f;                              // decays toward neutral
+    m_momentum += strengthDiff * 0.05f;               // slight, persistent tilt to the better side
+    m_momentum += (float)((rand() % 11) - 5);         // a little life, not a wall of noise (symmetric)
+
     if (randVal < playerTeamChance) {
-        currentMomentum += (m_isHome ? 30.0f : -30.0f);
+        m_momentum += (m_isHome ? 22.0f : -22.0f);
         m_playerTeamAttacking = true;
         
         // When our team attacks and the user plays an attacking role, he always gets to
@@ -191,7 +245,7 @@ void MatchEngine::updateMinute() {
             simulateAIEvent(true);
         }
     } else if (randVal < playerTeamChance + oppTeamChance) {
-        currentMomentum += (m_isHome ? -30.0f : 30.0f);
+        m_momentum += (m_isHome ? -22.0f : 22.0f);
         m_playerTeamAttacking = false;
         
         // Same on the other side: when the opponent attacks and the user plays a
@@ -208,22 +262,18 @@ void MatchEngine::updateMinute() {
         }
     }
     
-    if (currentMomentum > 100.0f) currentMomentum = 100.0f;
-    if (currentMomentum < -100.0f) currentMomentum = -100.0f;
-    
-    if (!m_momentumHistory.empty()) {
-        currentMomentum = (m_momentumHistory.back() * 0.6f) + (currentMomentum * 0.4f);
-    }
-    m_momentumHistory.push_back(currentMomentum);
-    
-    // Dynamically calculate possession based on average momentum
+    if (m_momentum > 100.0f) m_momentum = 100.0f;
+    if (m_momentum < -100.0f) m_momentum = -100.0f;
+    m_momentumHistory.push_back(m_momentum);
+
+    // Possession is a whole-match average, so it stays anchored to the strength gap and is
+    // only nudged by how the game has actually gone - momentum itself now averages near
+    // zero by design, so deriving possession from it alone would pin every match at 50/50.
     float avgMomentum = 0.0f;
     for (float m : m_momentumHistory) avgMomentum += m;
     avgMomentum /= m_momentumHistory.size();
-    
-    // avgMomentum is between -100 (Away dominance) and 100 (Home dominance)
-    // Map -100..100 to 0..100 for home possession
-    int homePossession = 50 + static_cast<int>(avgMomentum / 2.0f);
+
+    int homePossession = 50 + static_cast<int>(strengthDiff / 3.0f + avgMomentum / 6.0f);
     if (homePossession > 80) homePossession = 80; // realistic cap
     if (homePossession < 20) homePossession = 20; // realistic floor
     

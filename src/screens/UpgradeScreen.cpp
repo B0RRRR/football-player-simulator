@@ -27,8 +27,17 @@ void UpgradeScreen::init() {
     m_statsText.setFillColor(sf::Color::White);
     m_statsText.setPosition(200.f, 140.f);
     
-    // Setup buttons
-    std::vector<std::string> actions = {"Shooting", "Passing", "Tackling", "Goalkeeping", "Coach", "Car", "Back"};
+    // Only offer the attributes this position actually uses - an outfielder has no reason
+    // to train goalkeeping, and a keeper none to train shooting.
+    Player* pl = m_gameManager->getPlayer();
+    std::vector<std::string> actions;
+    if (!pl || pl->usesShooting())    actions.push_back("Shooting");
+    if (!pl || pl->usesPassing())     actions.push_back("Passing");
+    if (!pl || pl->usesTackling())    actions.push_back("Tackling");
+    if (!pl || pl->usesGoalkeeping()) actions.push_back("Goalkeeping");
+    actions.push_back("Coach");
+    actions.push_back("Car");
+    actions.push_back("Back");
     float startY = 280.f;
     
     for (size_t i = 0; i < actions.size(); ++i) {
@@ -60,35 +69,36 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
                 } else if (btn.action == "Shooting") {
                     int cost = player->shooting * 5;
-                    if (player->experience >= cost && player->shooting < 99) {
+                    if (player->experience >= cost && player->shooting < player->potential) {
                         player->experience -= cost;
                         player->shooting++;
                     }
                 } else if (btn.action == "Passing") {
                     int cost = player->passing * 5;
-                    if (player->experience >= cost && player->passing < 99) {
+                    if (player->experience >= cost && player->passing < player->potential) {
                         player->experience -= cost;
                         player->passing++;
                     }
                 } else if (btn.action == "Tackling") {
                     int cost = player->tackling * 5;
-                    if (player->experience >= cost && player->tackling < 99) {
+                    if (player->experience >= cost && player->tackling < player->potential) {
                         player->experience -= cost;
                         player->tackling++;
                     }
                 } else if (btn.action == "Goalkeeping") {
                     int cost = player->goalkeeping * 5;
-                    if (player->experience >= cost && player->goalkeeping < 99) {
+                    if (player->experience >= cost && player->goalkeeping < player->potential) {
                         player->experience -= cost;
                         player->goalkeeping++;
                     }
                 } else if (btn.action == "Coach") {
                     if (player->money >= 25000) {
                         player->money -= 25000;
-                        if (player->shooting < 99) player->shooting += 1;
-                        if (player->passing < 99) player->passing += 1;
-                        if (player->tackling < 99) player->tackling += 1;
-                        if (player->goalkeeping < 99) player->goalkeeping += 1;
+                        // Only the attributes he actually trains.
+                        if (player->usesShooting()    && player->shooting    < player->potential) player->shooting    += 1;
+                        if (player->usesPassing()     && player->passing     < player->potential) player->passing     += 1;
+                        if (player->usesTackling()    && player->tackling    < player->potential) player->tackling    += 1;
+                        if (player->usesGoalkeeping() && player->goalkeeping < player->potential) player->goalkeeping += 1;
                     }
                 } else if (btn.action == "Car") {
                     if (player->money >= 20000) {
@@ -120,23 +130,31 @@ void UpgradeScreen::update(sf::Time deltaTime) {
     
     m_xpText.setString("Experience (XP): " + std::to_string(p->experience) + "   Money: $" + std::to_string(p->money));
     
-    std::string stats = "Shooting: " + std::to_string(p->shooting) + " | " +
-                        "Passing: " + std::to_string(p->passing) + " | " +
-                        "Tackling: " + std::to_string(p->tackling) + " | " +
-                        "Goalkeeping: " + std::to_string(p->goalkeeping) + "\n" +
-                        "Morale: " + std::to_string(p->morale) + "%";
+    std::string stats;
+    if (p->usesShooting())    stats += "Shooting: " + std::to_string(p->shooting) + " | ";
+    if (p->usesPassing())     stats += "Passing: " + std::to_string(p->passing) + " | ";
+    if (p->usesTackling())    stats += "Tackling: " + std::to_string(p->tackling) + " | ";
+    if (p->usesGoalkeeping()) stats += "Goalkeeping: " + std::to_string(p->goalkeeping) + " | ";
+    if (stats.size() >= 3) stats.erase(stats.size() - 3);
+    stats += "\nOverall: " + std::to_string(p->overall()) + "   Potential (cap): " + std::to_string(p->potential) +
+             "   Morale: " + std::to_string(p->morale) + "%";
     m_statsText.setString(stats);
-    
-    // Update button text with dynamic costs
+
+    // Each upgrade button shows its cost, or MAX once the stat has hit the potential cap.
+    auto label = [&](const char* n, int stat) {
+        return (stat >= p->potential)
+            ? std::string("Upgrade ") + n + " (MAX)"
+            : std::string("Upgrade ") + n + " (" + std::to_string(stat * 5) + " XP)";
+    };
     for (auto& btn : m_buttons) {
         if (btn.action == "Shooting") {
-            btn.text.setString("Upgrade Shooting (" + std::to_string(p->shooting * 5) + " XP)");
+            btn.text.setString(label("Shooting", p->shooting));
         } else if (btn.action == "Passing") {
-            btn.text.setString("Upgrade Passing (" + std::to_string(p->passing * 5) + " XP)");
+            btn.text.setString(label("Passing", p->passing));
         } else if (btn.action == "Tackling") {
-            btn.text.setString("Upgrade Tackling (" + std::to_string(p->tackling * 5) + " XP)");
+            btn.text.setString(label("Tackling", p->tackling));
         } else if (btn.action == "Goalkeeping") {
-            btn.text.setString("Upgrade Goalkeeping (" + std::to_string(p->goalkeeping * 5) + " XP)");
+            btn.text.setString(label("Goalkeeping", p->goalkeeping));
         } else if (btn.action == "Coach") {
             btn.text.setString("Personal Coach ($25000) [+1 All Stats]");
         } else if (btn.action == "Car") {

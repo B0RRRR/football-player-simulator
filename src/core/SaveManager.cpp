@@ -105,6 +105,7 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
             {"passing", p->passing},
             {"tackling", p->tackling},
             {"goalkeeping", p->goalkeeping},
+            {"potential", p->potential},
             {"goals", p->goals},
             {"assists", p->assists},
             {"experience", p->experience},
@@ -248,6 +249,7 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
         p->passing = jp.value("passing", 50);
         p->tackling = jp.value("tackling", 50);
         p->goalkeeping = jp.value("goalkeeping", 50);
+        p->potential = jp.value("potential", 88); // pre-potential saves keep a fair ceiling
         p->goals = jp.value("goals", 0);
         p->assists = jp.value("assists", 0);
         p->experience = jp.value("experience", 0);

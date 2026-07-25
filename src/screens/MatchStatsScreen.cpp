@@ -64,8 +64,19 @@ void MatchStatsScreen::init() {
         } else {
             p->totalSeasonRating += m_engine->getPlayerRating();
             p->matchesPlayedThisSeason++;
-            
+
             float rating = m_engine->getPlayerRating();
+
+            // Playing well is how a footballer actually develops. Matches used to award no
+            // XP at all in this flow (the +50 in Match.cpp belongs to a dead code path), so
+            // the centrepiece of the game fed nothing into progression and training drills
+            // were the only way to improve.
+            int matchXp = 30 + (int)((rating - 5.0f) * 25.0f);
+            if (matchXp < 30) matchXp = 30;
+            matchXp += m_engine->getUserGoalsScored() * 25;
+            p->experience += matchXp;
+            ratingStr += "\nXP: +" + std::to_string(matchXp);
+
             float trustChange = 0.0f;
             if (rating >= 6.5f) trustChange = 5.0f;
             else if (rating < 6.0f) trustChange = -5.0f;

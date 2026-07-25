@@ -7,6 +7,21 @@ Database::Database() {
 }
 
 void Database::init() {
+    // Idempotent: init() runs afresh whenever a new career starts, so wipe anything a
+    // previous career left behind. Without this the leagues were push_back'd on top of the
+    // old ones (doubling them) and the year/tournaments/tables carried over - which is why
+    // a new career began in the wrong season with the previous run's league structure.
+    m_leagues.clear();
+    m_leagueHistory.clear();
+    m_championsLeague = Tournament{};
+    m_europaLeague = Tournament{};
+    m_worldCup = Tournament{};
+    m_euroCup = Tournament{};
+    m_championsLeagueHistory.clear();
+    m_europaLeagueHistory.clear();
+    m_worldCupHistory.clear();
+    m_euroCupHistory.clear();
+
     // ================== ENGLAND ==================
     League epl;
     epl.name = "Premier League";

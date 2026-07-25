@@ -13,8 +13,14 @@ NewCareerScreen::NewCareerScreen() : m_state(SetupState::InputName), m_playerNam
 }
 
 void NewCareerScreen::init() {
+    // Wipe the previous career before anything reads the world: reset the player and rebuild
+    // the database/calendar to the opening season. Done here (not at finalize) so the club
+    // list below is built from the fresh leagues and the chosen club pointer stays valid.
+    m_gameManager->getPlayer()->reset();
+    m_gameManager->getCareerManager()->resetCareer();
+
     auto& font = AssetManager::get().getFont("MainFont");
-    
+
     m_titleText.setFont(font);
     m_titleText.setCharacterSize(40);
     m_titleText.setFillColor(sf::Color::White);
@@ -191,6 +197,22 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     p->name = m_playerName;
                     p->nationality = m_selectedNationality;
                     p->position = static_cast<PlayerPosition>(m_selectedPosition);
+
+                    // A raw prospect: decent at his job, weak at everything else. The
+                    // primary stat lets him into a lower-league starting XI (selection uses
+                    // positionalRating), while the flat overall stays low (~48-52) so there
+                    // is a real climb. Secondaries and the primary all share one potential
+                    // ceiling, rolled here, so nobody maxes out in a single season.
+                    int primary = 56 + (rand() % 7);   // 56-62
+                    auto sec = [&]() { return 42 + (rand() % 9); }; // 42-50
+                    p->shooting = sec(); p->passing = sec(); p->tackling = sec(); p->goalkeeping = sec();
+                    switch (p->position) {
+                        case PlayerPosition::Forward:    p->shooting = primary; break;
+                        case PlayerPosition::Midfielder: p->passing = primary; break;
+                        case PlayerPosition::Defender:   p->tackling = primary; break;
+                        case PlayerPosition::Goalkeeper: p->goalkeeping = primary; break;
+                    }
+                    p->potential = 78 + (rand() % 15); // 78-92: how far this talent can go
                     // Find the club object
                     const Club* selectedClubObj = nullptr;
                     for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
@@ -203,13 +225,9 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     }
 
                     p->currentClub = const_cast<Club*>(selectedClubObj);
-                    p->experience = 0;
-                    p->goals = 0;
-                    p->assists = 0;
-                    
-                    // Initialize career
-                    m_gameManager->getCareerManager()->resetCareer();
-                    
+                    // The world was already reset in init(); resetting the career again here
+                    // would rebuild the database and dangle the currentClub pointer just set.
+
                     // Proceed to Career Hub
                     m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
                     return;

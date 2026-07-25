@@ -92,7 +92,7 @@ void TransferScreen::generateOffersIfNeeded() {
     int baseChance = p->isTransferListed ? 60 : 15;
     if (rand() % 100 > baseChance) return; // No random offers this window
 
-    int playerOverall = (p->shooting + p->passing + p->tackling + p->goalkeeping) / 4;
+    int playerOverall = p->positionalRating(); // offers track his position, not flat average
     int targetStrength = playerOverall + ((p->goals + p->assists) / 5);
     if (targetStrength > 90) targetStrength = 90;
     
@@ -308,7 +308,7 @@ void TransferScreen::attemptTransfer(Club* targetClub) {
         return;
     }
 
-    int playerOverall = (p->shooting + p->passing + p->tackling + p->goalkeeping) / 4;
+    int playerOverall = p->positionalRating(); // offers track his position, not flat average
     int targetStrength = playerOverall + ((p->goals + p->assists) / 5);
     
     // Check if club is interested

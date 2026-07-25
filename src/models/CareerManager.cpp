@@ -62,8 +62,15 @@ CareerManager::CareerManager(GameManager* gm) : m_gameManager(gm), m_day(1) {
 }
 
 void CareerManager::resetCareer() {
+    // A brand-new career starts the world from scratch: rebuild the database (restores the
+    // original league structure the previous career's promotions/relegations had shuffled)
+    // and reset the calendar to the opening season. Player state is reset separately, by
+    // NewCareerScreen, before the club is picked.
     m_day = 1;
-    m_gameManager->getDatabase().resetStats();
+    m_year = 2024;
+    m_summerDay = 0;
+    m_isSummerBreak = false;
+    m_gameManager->getDatabase().init();
 }
 
 CalendarDayType CareerManager::getDayType() const {
@@ -492,11 +499,17 @@ void CareerManager::skipSeason() {
                 else if (ag > hg) { opp->points += 3; opp->wins++; p->currentClub->losses++; }
                 else { p->currentClub->points += 1; p->currentClub->draws++; opp->points += 1; opp->draws++; }
                 
-                p->totalSeasonRating += (5.0f + (rand() % 50) / 10.0f);
+                float simRating = 5.0f + (rand() % 50) / 10.0f;
+                p->totalSeasonRating += simRating;
                 p->matchesPlayedThisSeason++;
+                // Simulated matches still develop him, on the same rating-driven curve the
+                // played ones use - otherwise skipping a season froze his progression.
+                int simXp = 30 + (int)((simRating - 5.0f) * 25.0f);
+                p->experience += (simXp < 30) ? 30 : simXp;
             }
         } else if (getDayType() == CalendarDayType::Training) {
-            p->experience += 50;
+            // Auto-trained, not played: a mediocre session rather than a perfect one.
+            p->experience += 12;
         }
         advanceDay(false, false);
     }
@@ -696,7 +709,7 @@ void CareerManager::startSummerBreak() {
         avgRating = p->totalSeasonRating / (float)p->matchesPlayedThisSeason;
     }
     
-    int overall = (p->shooting + p->passing + p->tackling + p->goalkeeping) / 4;
+    int overall = p->overall();
     
     if (avgRating >= 7.0f && p->matchesPlayedThisSeason >= 20 && overall >= 75) {
         p->isCalledUp = true;

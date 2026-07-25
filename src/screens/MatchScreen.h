@@ -74,7 +74,7 @@ struct PlayerDot {
 
 class MatchScreen : public Screen {
 public:
-    MatchScreen();
+    MatchScreen() = default;
     virtual void init() override;
     virtual void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
     virtual void update(sf::Time deltaTime) override;
@@ -194,12 +194,14 @@ private:
     int m_foulVictimIdx = -1;
     int m_foulOffenderIdx = -1;      // who committed the foul (shown lunging in)
     bool m_foulOffenderIsHome = true; // remembered across the challenge -> free kick
+    bool m_foulContact = false;      // the two men have actually met; the stumble is now playing
     int m_sendOffGraceIdx = -1;      // a red-carded offender kept on screen until play restarts
 
     // Direct free kick (wall + shot). Set up by setupFreeKick when the foul is within
     // shooting range; played out by the FreeKickShot state.
     bool m_fkDirect = false;         // this dead ball is a direct free kick, not a simple restart
     bool m_fkUserTaker = false;      // the user is taking it (interactive timing bar)
+    bool m_fkPenalty = false;        // the foul was inside the box: penalty, no wall
     bool m_fkAttackHome = true;      // the fouled (attacking) side is home
     bool m_fkStruck = false;         // the ball has been struck at goal
     bool m_fkResolved = false;       // the outcome has been registered with the engine
@@ -273,22 +275,34 @@ private:
     std::vector<PlayerDot> m_dots;
     sf::CircleShape m_visualBall;
     sf::Vector2f m_ballTarget;
-    int m_ballCarrierIdx;
-    
-    VisualState m_visualState;
-    float m_stateTimer;
+    int m_ballCarrierIdx = -1;
+
+    VisualState m_visualState = VisualState::Kickoff;
+    float m_stateTimer = 0.f;
     MatchEvent m_pendingEvent;
     AttackShape m_attackShape = AttackShape::CenterAttack;
     bool m_passForward = true; // midfielder pass: forward (to a shot) vs sideways/back
     bool m_offsideRun = false; // this cross/through-ball episode: the striker mistimed his run
     bool m_offsidePassReleased = false; // the offside pass has been struck and is flying to him
     bool m_boxFoulRolled = false;       // this attack has already rolled for a foul near the box
-    int m_attackWingerIdx;
-    float m_shotTargetY;
-    int m_attackFwdIdx;
+    int m_attackWingerIdx = -1;
+    float m_shotTargetY = 290.f;
+
+    // Goalkeeper "read & dive" save: instead of a timing bar, the keeper reads the flight
+    // and commits a dive to a corner. He saves it if he picks the right side (the reach he
+    // covers scales with his goalkeeping), not by pressing at the right instant.
+    bool m_gkDiveMode = false;   // this save is the directional minigame, not the timing bar
+    bool m_gkDived = false;      // he has committed his dive
+    bool m_gkDiveSaved = false;  // the committed dive is a save (drives the parry visual)
+    float m_gkShotClock = 0.f;   // time since the shot was struck
+    float m_gkFlightTime = 1.4f; // how long the ball takes to reach the line
+    float m_gkDiveY = 290.f;     // the height he dived to
+    float m_gkGoalLineX = 45.f;  // his goal line, where he ends the dive
+    void resolveGkDive(float diveY);
+    int m_attackFwdIdx = -1;
     Beat m_attackPhase = Beat::Setup;
-    
-    float m_simTimer;
+
+    float m_simTimer = 0.f;
 
     // Scoreboard clock, in fractional minutes. PURELY COSMETIC - the engine's m_minute
     // still drives everything (chance rolls, full time, the scheduled injury/red-card
@@ -300,13 +314,13 @@ private:
     float m_displayTime = 0.f;
 
     // Minigame Elements (Tactical Episode)
-    bool m_minigameActive;
-    float m_minigameTimer;
-    
+    bool m_minigameActive = false;
+    float m_minigameTimer = 0.f;
+
     // Camera
     sf::View m_camera;
     sf::View m_uiView;
-    float m_currentZoom;
+    float m_currentZoom = 1.f;
     
     // Physics
     sf::Vector2f m_ballVelocity;
@@ -318,10 +332,19 @@ private:
     // start so the shape doesn't slide around with the user-controlled ball - otherwise
     // every player mirrors the user's dribble.
     sf::Vector2f m_ambientAnchor;
+    // A low-pass-filtered ball position that the off-ball shape follows. The raw ball jumps
+    // between episodes/turnovers, and keying the whole formation off it made the entire side
+    // lurch across the pitch every time. Eased slowly, players jog into shape instead.
+    float m_ambientBallX = 440.f;
+    float m_ambientBallY = 290.f;
     
     // Player Controls. These are (re)set in initMinigame, but they're read from draw code
     // and QTE handlers too, so give them sane defaults rather than leaving them garbage.
     sf::Vector2f m_userMoveDir{1.f, 0.f};
+    // Mouse aiming: a click sets the exact point the action is played at, instead of the
+    // eight coarse directions WASD can express. Consumed by the shot/pass resolvers.
+    sf::Vector2f m_mouseAimWorld;
+    bool m_mouseAimValid = false;
     float m_dashTimer = 0.f;
     float m_dashSpeedBonus = 0.f;
     int m_userIdx = 0;
@@ -360,7 +383,6 @@ private:
         bool isHovered = false;
     };
     std::vector<Button> m_speedButtons;
-    int m_matchSpeedMode; // 0=Slow, 1=Normal, 2=Fast
-    bool m_isMinigameResultPending;
-    float m_scriptTimer;
+    bool m_isMinigameResultPending = false;
+    float m_scriptTimer = 0.f;
 };

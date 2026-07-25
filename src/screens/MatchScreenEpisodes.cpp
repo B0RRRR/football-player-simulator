@@ -70,9 +70,12 @@ void MatchScreen::updateAmbientShape() {
     // During a minigame the ball is glued to the user's feet, so following it here would
     // make the whole formation mirror his dribble. Anchor to the frozen episode position
     // instead; in open play, follow the live ball.
-    sf::Vector2f ball = m_minigameActive ? m_ambientAnchor : m_visualBall.getPosition();
-    // The whole shape shuffles toward whichever end the ball is in.
-    float shift = (ball.x - 440.f) * 0.35f;
+    sf::Vector2f rawBall = m_minigameActive ? m_ambientAnchor : m_visualBall.getPosition();
+    // Ease a filtered reference toward it so a ball that teleports between episodes doesn't
+    // yank the whole side across the pitch in one frame. ~6%/frame = players jog over ~1-2s.
+    m_ambientBallX += (rawBall.x - m_ambientBallX) * 0.06f;
+    m_ambientBallY += (rawBall.y - m_ambientBallY) * 0.06f;
+    float ballX = m_ambientBallX, ballY = m_ambientBallY;
 
     // A slow, per-player drift so players jockey independently instead of standing dead
     // still once they reach their slot. Each dot has its own phase (via its index), so
@@ -94,22 +97,30 @@ void MatchScreen::updateAmbientShape() {
 
             if (i == 0) { // keeper: hold the line, track the ball's height
                 m_dots[idx].targetPos = sf::Vector2f(team == 0 ? 70.f : 810.f,
-                                                     std::clamp(ball.y, 240.f, 340.f));
+                                                     std::clamp(ballY, 240.f, 340.f));
                 m_dots[idx].speed = 80.f;
                 continue;
             }
+
+            // Movement is by role, not one blanket slide. Defenders hold a shallow back
+            // line and barely follow the ball's channel; forwards push up and drift across
+            // freely. A uniform shift is what made centre-backs charge downfield in a clump
+            // and wingers bolt to the far flank.
+            float shiftScale, leanScale;
+            if (i <= 4)      { shiftScale = 0.15f; leanScale = 0.06f; } // defenders
+            else if (i <= 8) { shiftScale = 0.30f; leanScale = 0.14f; } // midfield
+            else             { shiftScale = 0.45f; leanScale = 0.22f; } // forwards
+            float shift = (ballX - 440.f) * shiftScale;
 
             float slotX = (team == 0) ? std::min(50.f + form[i][0] * 780.f, 435.f)
                                       : std::max(830.f - form[i][0] * 780.f, 445.f);
             float slotY = 140.f + form[i][1] * 300.f;
 
-            float driftX = std::sin(s_ambientClock * 0.9f + idx * 1.3f) * 9.f;
-            float driftY = std::cos(s_ambientClock * 0.7f + idx * 2.1f) * 9.f;
+            float driftX = std::sin(s_ambientClock * 0.9f + idx * 1.3f) * 8.f;
+            float driftY = std::cos(s_ambientClock * 0.7f + idx * 2.1f) * 8.f;
 
-            // Slide with the ball, and lean gently into the ball's channel so the side
-            // shuffles across rather than holding rigid lanes.
             m_dots[idx].targetPos = sf::Vector2f(std::clamp(slotX + shift + driftX, 55.f, 815.f),
-                                                 slotY + (ball.y - slotY) * 0.15f + driftY);
+                                                 slotY + (ballY - slotY) * leanScale + driftY);
             m_dots[idx].speed = 55.f;
         }
     }
@@ -393,7 +404,15 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
     // Build the challenge around whoever had the ball. If the carrier is on the fouled
     // side he's the victim (a defender lunges in); if he's on the offending side he IS the
     // fouler (he barged someone). Falls back to nearest-to-ball when the ball was loose.
-    bool carrierValid = (carrier >= 0 && carrier % 11 != 0 && !hasRedCard(carrier));
+    // ...and only if he is actually ON the ball. The ball no longer gets dragged to the
+    // participants, so a "carrier" standing away from it would put the whole incident
+    // somewhere the ball isn't.
+    bool carrierNearBall = false;
+    if (carrier >= 0 && carrier < (int)m_dots.size()) {
+        sf::Vector2f d = m_dots[carrier].shape.getPosition() - spot;
+        carrierNearBall = std::hypot(d.x, d.y) < 45.f;
+    }
+    bool carrierValid = (carrier >= 0 && carrier % 11 != 0 && !hasRedCard(carrier) && carrierNearBall);
     bool carrierIsOffender = carrierValid && ((carrier < 11) == offenderIsHome);
     bool carrierIsVictim   = carrierValid && ((carrier < 11) != offenderIsHome);
 
@@ -408,29 +427,50 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
         m_foulVictimIdx = nearestTo(vicBase, spot);
     }
 
-    // Work out the challenge geometry ONCE, here. Doing it per frame in the
-    // FoulChallenge branch meant the victim's "stagger away" target was recomputed from
-    // his own latest position every frame, so it kept retreating and he fled forever with
-    // the offender chasing him - both ended up miles from the ball.
-    if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
-        sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
-        sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
-
-        // The foul happened at the victim's feet - put the dead ball there, so the
-        // challenge and the free kick both centre on him rather than on wherever the ball
-        // had drifted.
-        m_visualBall.setPosition(vicPos);
-        m_ballTarget = vicPos;
-
-        sf::Vector2f away = vicPos - offPos;
-        float len = std::hypot(away.x, away.y);
-        if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
-
-        // Offender lunges slightly PAST the victim (a real challenge, not a gentle touch)
-        // and the victim is knocked well clear, so the contact reads on screen.
-        m_foulLungeTarget = vicPos + (vicPos - offPos) * 0.15f;
-        m_foulStaggerTarget = vicPos + away * 45.f;
+    // The two men have to be close enough for this to read as a duel. "Nearest opponent"
+    // alone could be most of a pitch away, which is how you got a challenge between players
+    // who were never near each other and a free kick awarded behind the play. If they are
+    // far apart, pick the tightest opposing pair that is also near the ball instead.
+    auto separation = [&](int a, int b) {
+        sf::Vector2f d = m_dots[a].shape.getPosition() - m_dots[b].shape.getPosition();
+        return std::hypot(d.x, d.y);
+    };
+    auto distToBall = [&](int a) {
+        sf::Vector2f d = m_dots[a].shape.getPosition() - spot;
+        return std::hypot(d.x, d.y);
+    };
+    // A duel is only believable if the two men are on each other AND on the ball.
+    bool pairOk = (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0
+                   && separation(m_foulOffenderIdx, m_foulVictimIdx) < 85.f
+                   && std::min(distToBall(m_foulOffenderIdx), distToBall(m_foulVictimIdx)) < 60.f);
+    if (!pairOk) {
+        int bo = -1, bv = -1; float bestScore = 1e9f;
+        for (int o = offBase; o < offBase + 11; ++o) {
+            if (o % 11 == 0 || hasRedCard(o)) continue;
+            for (int v = vicBase; v < vicBase + 11; ++v) {
+                if (v % 11 == 0 || hasRedCard(v)) continue;
+                sf::Vector2f op = m_dots[o].shape.getPosition();
+                sf::Vector2f vp = m_dots[v].shape.getPosition();
+                sf::Vector2f mid((op.x + vp.x) * 0.5f, (op.y + vp.y) * 0.5f);
+                // Tight duel first, near the ball second.
+                float score = std::hypot(op.x - vp.x, op.y - vp.y)
+                            + std::hypot(mid.x - spot.x, mid.y - spot.y) * 0.6f;
+                if (score < bestScore) { bestScore = score; bo = o; bv = v; }
+            }
+        }
+        if (bo >= 0 && bv >= 0) { m_foulOffenderIdx = bo; m_foulVictimIdx = bv; }
     }
+
+    // The challenge is played out in two phases (see the FoulChallenge state): the offender
+    // closes the man down, and only when they actually MEET does the stumble play and the
+    // whistle go. The geometry is worked out at the moment of contact, not here, because
+    // targets fixed up front went stale as soon as either man moved.
+    // The whistle stops play where the ball IS. It used to be snapped onto the victim, and
+    // since he is often not standing on it (the duel pair is chosen separately), the ball
+    // visibly jumped across the pitch just before every foul. Leave it on the spot - the
+    // FoulChallenge state pins it there for the rest of the stoppage.
+    m_foulContact = false;
+    m_ballTarget = spot;
 
     // If this challenge is a sending-off, make sure the player who leaves the pitch is the
     // one we just showed lunging in. commitEvent (already run) had picked a random outfield
@@ -489,8 +529,16 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
     // out in midfield is just knocked back into play (the simple restart below).
     bool fouledIsHome = !offenderIsHome;              // the side that WON the free kick
     float attackGoalX = fouledIsHome ? 845.f : 35.f;  // the goal they're shooting at
+    float goalLineX = fouledIsHome ? 840.f : 40.f;    // the pitch edge in front of that goal
     float distToGoal = std::abs(attackGoalX - spot.x);
-    m_fkDirect = (distToGoal < 250.f && std::abs(spot.y - 290.f) < 150.f);
+
+    // Inside the box it's a PENALTY. Scaled off the real thing: the pitch is 800px for
+    // ~105m, so the 16.5m area is ~126px deep and the 40.3m width is ~190px (y 195..385),
+    // with the spot 11m (~84px) out. This also removes the case where a foul almost on the
+    // goal line put the "wall" 90px further on - i.e. inside the net.
+    bool inBox = (std::abs(goalLineX - spot.x) < 126.f) && (std::abs(spot.y - 290.f) < 95.f);
+    m_fkPenalty = inBox;
+    m_fkDirect = inBox || (distToGoal < 250.f && std::abs(spot.y - 290.f) < 150.f);
     m_fkAttackHome = fouledIsHome;
     m_fkStruck = false;
     m_fkResolved = false;
@@ -511,38 +559,49 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
             if (!hasRedCard(userDot)) { taker = userDot; m_fkUserTaker = true; }
         }
 
-        // Direction from ball to the goal being attacked.
-        sf::Vector2f toGoal(attackGoalX - spot.x, 290.f - spot.y);
-        float gl = std::hypot(toGoal.x, toGoal.y);
-        if (gl > 0.1f) { toGoal.x /= gl; toGoal.y /= gl; }
-        sf::Vector2f perp(-toGoal.y, toGoal.x); // across the wall
-
-        // The defending (offending) side forms the wall ~90px in front of the ball. Take
-        // the three nearest outfielders and line them up shoulder to shoulder.
         int dBase = offenderIsHome ? 0 : 11;
-        std::vector<std::pair<float,int>> cand;
-        for (int i = dBase; i < dBase + 11; ++i) {
-            if (i % 11 == 0) continue;      // the keeper stays on his line
-            if (i == taker) continue;
-            if (hasRedCard(i)) continue;
-            sf::Vector2f d = m_dots[i].shape.getPosition() - spot;
-            cand.push_back({std::hypot(d.x, d.y), i});
-        }
-        std::sort(cand.begin(), cand.end());
-        sf::Vector2f wallCenter = spot + toGoal * 90.f;
-        int n = std::min(3, (int)cand.size());
-        for (int k = 0; k < n; ++k) {
-            int idx = cand[k].second;
-            // Shoulder to shoulder: the dots are radius 6, so a 12px pitch leaves them
-            // touching with no gap for the ball to squeeze through.
-            float off = (k - (n - 1) / 2.f) * 12.f;
-            sf::Vector2f pos = wallCenter + perp * off;
-            m_dots[idx].targetPos = pos;
-            m_dots[idx].speed = 150.f;
-            m_fkWallPos[m_fkWallCount] = pos;
-            m_fkWall[m_fkWallCount++] = idx;
-        }
         m_fkKeeperIdx = dBase; // local 0 = keeper
+
+        if (m_fkPenalty) {
+            // Ball on the spot, no wall - everyone else just has to stand off.
+            spot = sf::Vector2f(fouledIsHome ? (goalLineX - 84.f) : (goalLineX + 84.f), 290.f);
+            m_visualBall.setPosition(spot);
+            m_ballTarget = spot;
+        } else {
+            // Direction from ball to the goal being attacked.
+            sf::Vector2f toGoal(attackGoalX - spot.x, 290.f - spot.y);
+            float gl = std::hypot(toGoal.x, toGoal.y);
+            if (gl > 0.1f) { toGoal.x /= gl; toGoal.y /= gl; }
+            sf::Vector2f perp(-toGoal.y, toGoal.x); // across the wall
+
+            // The defending side forms the wall ~90px in front of the ball, but never past
+            // the goal line - close-in free kicks used to shove all three men into the net.
+            std::vector<std::pair<float,int>> cand;
+            for (int i = dBase; i < dBase + 11; ++i) {
+                if (i % 11 == 0) continue;      // the keeper stays on his line
+                if (i == taker) continue;
+                if (hasRedCard(i)) continue;
+                sf::Vector2f d = m_dots[i].shape.getPosition() - spot;
+                cand.push_back({std::hypot(d.x, d.y), i});
+            }
+            std::sort(cand.begin(), cand.end());
+
+            float room = std::abs(goalLineX - spot.x) - 25.f; // keep them off the line
+            sf::Vector2f wallCenter = spot + toGoal * std::clamp(90.f, 0.f, std::max(0.f, room));
+            int n = std::min(3, (int)cand.size());
+            for (int k = 0; k < n; ++k) {
+                int idx = cand[k].second;
+                // Shoulder to shoulder: the dots are radius 6, so a 12px pitch leaves them
+                // touching with no gap for the ball to squeeze through.
+                float off = (k - (n - 1) / 2.f) * 12.f;
+                sf::Vector2f pos = wallCenter + perp * off;
+                pos.y = std::clamp(pos.y, 140.f, 440.f);
+                m_dots[idx].targetPos = pos;
+                m_dots[idx].speed = 150.f;
+                m_fkWallPos[m_fkWallCount] = pos;
+                m_fkWall[m_fkWallCount++] = idx;
+            }
+        }
     }
 
     m_foulPlayerIdx = taker;
@@ -835,7 +894,15 @@ void MatchScreen::registerFreeKickOutcome() {
         Club* atk = (m_fkAttackHome == m_engine->isHome()) ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
         std::string name = atk ? atk->name : std::string("The attacker");
         std::string tag = "[" + std::to_string(m_engine->getMinute()) + "'] ";
-        if (m_fkSuccess) {
+        if (m_fkPenalty) {
+            if (m_fkSuccess) {
+                e.type = EventType::Goal; e.outcome = EventOutcome::Goal;
+                e.text = tag + "GOAL! " + name + " makes no mistake from the penalty spot!";
+            } else {
+                e.type = EventType::Chance; e.outcome = EventOutcome::Saved;
+                e.text = tag + name + " misses the penalty!";
+            }
+        } else if (m_fkSuccess) {
             e.type = EventType::Goal; e.outcome = EventOutcome::Goal;
             e.text = tag + "GOAL! " + name + " scores direct from the free kick!";
         } else if (m_fkHitWall) {
@@ -958,16 +1025,44 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         // ball, the victim stumbles, then the whistle goes and we settle into the dead
         // ball. Without this the ball just stopped for no visible reason.
         m_ballCarrierIdx = -1;
-        sf::Vector2f spot = m_visualBall.getPosition();
 
-        // Fixed targets from beginFoul - both men converge and stop, rather than the
-        // victim's target fleeing ahead of him every frame.
-        if (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0) {
+        // Two phases. The offender first CLOSES HIM DOWN, and the whistle waits until they
+        // actually meet; a fixed timer used to blow it while they were still yards apart,
+        // which is why no contact was ever visible. On contact the ball is moved to where
+        // they met, so the free kick is given at the incident and not behind the play.
+        bool haveBoth = (m_foulOffenderIdx >= 0 && m_foulVictimIdx >= 0);
+        if (haveBoth && !m_foulContact) {
+            sf::Vector2f offPos = m_dots[m_foulOffenderIdx].shape.getPosition();
+            sf::Vector2f vicPos = m_dots[m_foulVictimIdx].shape.getPosition();
+
+            m_dots[m_foulOffenderIdx].targetPos = vicPos;  // charges the man
+            m_dots[m_foulOffenderIdx].speed = 300.f;
+            m_dots[m_foulVictimIdx].targetPos = vicPos;    // stands his ground
+            m_dots[m_foulVictimIdx].speed = 30.f;
+
+            float sep = std::hypot(offPos.x - vicPos.x, offPos.y - vicPos.y);
+            if (sep < 15.f || m_foulClock > 1.5f) {
+                m_foulContact = true;
+                m_foulClock = 0.f;
+
+                sf::Vector2f contact((offPos.x + vicPos.x) * 0.5f, (offPos.y + vicPos.y) * 0.5f);
+                m_visualBall.setPosition(contact);
+                m_ballTarget = contact;
+
+                sf::Vector2f away = vicPos - offPos;
+                float len = std::hypot(away.x, away.y);
+                if (len > 0.1f) { away.x /= len; away.y /= len; } else { away = sf::Vector2f(0.f, 1.f); }
+                m_foulLungeTarget = contact + away * 10.f;   // follows through over the ball
+                m_foulStaggerTarget = contact + away * 42.f; // victim knocked clear
+            }
+        } else if (haveBoth) {
             m_dots[m_foulOffenderIdx].targetPos = m_foulLungeTarget;
-            m_dots[m_foulOffenderIdx].speed = 260.f; // charges in
+            m_dots[m_foulOffenderIdx].speed = 150.f;
             m_dots[m_foulVictimIdx].targetPos = m_foulStaggerTarget;
             m_dots[m_foulVictimIdx].speed = 130.f;   // knocked back
         }
+
+        sf::Vector2f spot = m_ballTarget;
 
         // Zoom in on the incident so the challenge is actually visible - on the full-pitch
         // view a 40px lunge among 22 dots was impossible to spot, which is why "the
@@ -995,10 +1090,10 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         m_ballVelocity = sf::Vector2f(0.f, 0.f);
 
         // Real-time beat (m_foulClock, not the speed-scaled m_stateTimer) so the challenge
-        // reads the same at 0.5x or 2.5x - long enough to see the contact and a beat to
-        // register it. Then the whistle settles into the dead ball (which pulls the camera
-        // back out).
-        if (m_foulClock > 1.6f) {
+        // reads the same at 0.5x or 2.5x: a beat AFTER the contact to let the stumble
+        // register, then the whistle settles into the dead ball (which pulls the camera
+        // back out). The fallback covers a challenge with no valid pair.
+        if (m_foulContact ? (m_foulClock > 0.9f) : (!haveBoth && m_foulClock > 1.6f)) {
             setupFreeKick(m_foulOffenderIsHome);
         }
     }
@@ -1065,7 +1160,10 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                     // are low percentage, so keep the base modest.
                     Club* atk = (m_fkAttackHome == m_engine->isHome()) ? m_engine->getPlayerClub() : m_engine->getOpponentClub();
                     int str = atk ? atk->strength : 60;
-                    int chance = std::clamp(6 + (str - 55) / 3, 4, 45);
+                    // Penalties are converted around three quarters of the time; a direct
+                    // free kick is a long shot by comparison.
+                    int chance = m_fkPenalty ? std::clamp(68 + (str - 55) / 4, 60, 88)
+                                             : std::clamp(6 + (str - 55) / 3, 4, 45);
                     m_fkSuccess = (rand() % 100) < chance;
                 }
             } else {
@@ -1373,19 +1471,43 @@ void MatchScreen::updateAttackEpisode(float dt) {
     if (ballIsCarried && m_ballCarrierIdx != -1) {
         m_ballTarget = m_dots[m_ballCarrierIdx].shape.getPosition();
 
-        int numDefendersToRun = 4;
+        int numDefendersToRun = 3;
         if (m_attackPhase == Beat::MidPassHold || m_attackPhase == Beat::PassReceived) {
             numDefendersToRun = m_attackWingerIdx; // the value we stored (1 or 2)
         } else if (m_attackShape == AttackShape::Counter) {
             numDefendersToRun = 1; // caught out - only one defender recovers, so it's a real break
         }
 
-        for (int i = 1; i <= numDefendersToRun; ++i) {
-            sf::Vector2f carrierPos = m_dots[m_ballCarrierIdx].shape.getPosition();
-            float offsetX = m_pendingEvent.isHome ? (i * 15.f) : -(i * 15.f);
-            float offsetY = (i%2==0) ? (i * 20.f) : -(i * 20.f);
-            m_dots[ctx.defenderBase + i].targetPos = sf::Vector2f(carrierPos.x + offsetX, carrierPos.y + offsetY);
-            m_dots[ctx.defenderBase + i].speed = 150.f; // tracking runners
+        sf::Vector2f carrierPos = m_dots[m_ballCarrierIdx].shape.getPosition();
+
+        // The N defenders NEAREST the ball step out to challenge; the rest hold their line
+        // (the ambient shape). They used to be assigned slots by shirt number, so on a run
+        // through the middle the left-back was sent to a right-side slot and vice versa -
+        // the back four crossed over each other.
+        std::vector<std::pair<float,int>> line;
+        for (int i = 1; i <= 4; ++i) {
+            int idx = ctx.defenderBase + i;
+            if (hasRedCard(idx)) continue;
+            sf::Vector2f d = m_dots[idx].shape.getPosition() - carrierPos;
+            line.push_back({std::hypot(d.x, d.y), idx});
+        }
+        std::sort(line.begin(), line.end()); // by distance to the ball
+        int n = std::min(numDefendersToRun, (int)line.size());
+        std::vector<int> closers;
+        for (int k = 0; k < n; ++k) closers.push_back(line[k].second);
+
+        // Match the challenging slots to each defender's CURRENT vertical order, so the
+        // higher man takes the higher slot and nobody swaps sides.
+        std::sort(closers.begin(), closers.end(), [&](int a, int b) {
+            return m_dots[a].shape.getPosition().y < m_dots[b].shape.getPosition().y;
+        });
+        float goalDir = m_pendingEvent.isHome ? 1.f : -1.f; // toward the goal being attacked
+        for (int k = 0; k < n; ++k) {
+            int idx = closers[k];
+            float slotY = carrierPos.y + (k - (n - 1) / 2.f) * 28.f;      // spread top->bottom
+            float slotX = carrierPos.x + goalDir * (10.f + k * 10.f);     // goal-side, staggered
+            m_dots[idx].targetPos = sf::Vector2f(slotX, slotY);
+            m_dots[idx].speed = 150.f; // tracking runners
         }
     }
 }
@@ -1763,8 +1885,9 @@ void MatchScreen::runShotResolution(float dt, const EpisodeCtx& ctx) {
                 if (!m_boxFoulRolled && m_pendingEvent.type != EventType::PendingMinigame) {
                     m_boxFoulRolled = true;
                     if (rand() % 100 < 22) {
-                        if (m_attackFwdIdx >= 0 && m_attackFwdIdx < (int)m_dots.size())
-                            m_ballCarrierIdx = m_attackFwdIdx; // centre the challenge on the attacker
+                        // Don't reassign the carrier here: forcing the nominal striker to be
+                        // the fouled man dragged the incident away from wherever the ball
+                        // actually was. beginFoul centres it on the real carrier / the ball.
                         beginFoul(!m_pendingEvent.isHome); // the defending side commits the foul
                         return;
                     }

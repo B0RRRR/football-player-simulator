@@ -100,7 +100,7 @@ void SquadScreen::init() {
     };
     
     // Add User
-    int userOvr = (p->shooting + p->passing + p->tackling + p->goalkeeping) / 4;
+    int userOvr = p->overall();
     addPlayerRow(p->name + " (You)", p->position, p->nationality, userOvr, p->goals, p->assists, true);
     
     // Add AI Teammates
