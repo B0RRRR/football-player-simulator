@@ -176,6 +176,12 @@ void MatchScreen::updateMinigameAI(float dt) {
     // few who are actually involved. Without this everyone else stands frozen.
     updateAmbientShape();
 
+    // Once the shot is away the ball is a projectile - nobody presses or tackles it. A DRAWN
+    // shot is flown by hand with zero velocity, so the ballSpeed guard further down doesn't
+    // catch it; without this an opponent "robbed" the flying shot and it teleported to a free
+    // kick. Let the flight reach the goal line / touchline and resolve there.
+    if (m_ballStruck) return;
+
     bool userIsHome = m_engine->isHome();
     int ownBase = userIsHome ? 0 : 11;
     int oppBase = userIsHome ? 11 : 0;
@@ -208,9 +214,24 @@ void MatchScreen::updateMinigameAI(float dt) {
     // Only the two nearest actually close the ball down, and only while we have it. The
     // rest keep the ambient shape set above (they used to be parked on the spot here).
     if (userOnBall) {
+        // Jockey rather than climb into the carrier. Standing ON the ball (targetPos = ballPos)
+        // meant two opponents piled onto the player's body and just sat there doing nothing,
+        // because a real tackle is gated (grace period, cooldown, duel roll). Instead they take
+        // up a position goal-SIDE of the ball - between the carrier and the goal he's attacking
+        // - and hold a step off him: it reads as pressing/blocking the way forward, and the
+        // nearest man is still close enough to lunge in when the tackle logic below fires.
+        float goalX = userIsHome ? 845.f : 35.f;
+        sf::Vector2f toGoal(goalX - ballPos.x, 290.f - ballPos.y);
+        float gl = std::hypot(toGoal.x, toGoal.y);
+        if (gl > 1.f) { toGoal.x /= gl; toGoal.y /= gl; } else { toGoal = sf::Vector2f(attackDir, 0.f); }
+        sf::Vector2f perp(-toGoal.y, toGoal.x);
         for (size_t k = 0; k < byDist.size() && k < 2; ++k) {
             int idx = byDist[k].second;
-            m_dots[idx].targetPos = ballPos; // press the ball
+            // First man tight and central (blocks the lane), second holds off and to one side
+            // as cover instead of stacking on the same spot.
+            float ahead = (k == 0) ? 20.f : 40.f;
+            float side  = (k == 0) ? 0.f  : 30.f;
+            m_dots[idx].targetPos = ballPos + toGoal * ahead + perp * side;
             m_dots[idx].speed = chaseSpeed;
         }
     }
@@ -267,8 +288,10 @@ void MatchScreen::updateMinigameAI(float dt) {
     m_tackleAttemptTimer -= dt;
     if (m_tackleAttemptTimer > 0.f) return;
 
+    // The nearest presser now jockeys a step off the ball (~20px) rather than climbing onto
+    // it, so allow a lunge from that range - otherwise he'd hover forever and never commit.
     float gap = byDist[0].first;
-    if (gap > 14.f) return;
+    if (gap > 26.f) return;
 
     // One attempt roughly every second, not one per frame.
     m_tackleAttemptTimer = 1.0f;
@@ -1428,10 +1451,41 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
 }
 
 
+void MatchScreen::holdOffsideLine(int defenderBase, bool attackingHome) {
+    // The defenders who aren't actively challenging the ball hold ONE flat line, so a stray
+    // man doesn't sit deep by his own goal and drag the offside line (and the striker) back
+    // unrealistically. The line's depth tracks the ball but never collapses onto the goal.
+    float goalX = attackingHome ? 845.f : 35.f;
+    float goalDir = attackingHome ? 1.f : -1.f;
+    float lineX = m_visualBall.getPosition().x + goalDir * 130.f;
+    lineX = attackingHome ? std::clamp(lineX, 470.f, goalX - 75.f)
+                          : std::clamp(lineX, goalX + 75.f, 410.f);
+
+    std::vector<int> backs;
+    for (int i = 1; i <= 4; ++i) {
+        int idx = defenderBase + i;
+        if (idx < 0 || idx >= (int)m_dots.size() || hasRedCard(idx)) continue;
+        backs.push_back(idx);
+    }
+    std::sort(backs.begin(), backs.end(), [&](int a, int b) {
+        return m_dots[a].shape.getPosition().y < m_dots[b].shape.getPosition().y;
+    });
+    for (size_t k = 0; k < backs.size(); ++k) {
+        float ly = 195.f + (backs.size() > 1 ? (float)k / (backs.size() - 1) : 0.5f) * 190.f;
+        m_dots[backs[k]].targetPos = sf::Vector2f(lineX, ly);
+        m_dots[backs[k]].speed = 95.f; // shuffle as one unit
+    }
+}
+
 void MatchScreen::updateAttackEpisode(float dt) {
     EpisodeCtx ctx;
     ctx.attackerBase = m_pendingEvent.isHome ? 0 : 11;
     ctx.defenderBase = m_pendingEvent.isHome ? 11 : 0;
+
+    // Hold a coherent back line for the whole attack (including when the ball is in flight
+    // for a cross, which is exactly the offside moment). Challenging defenders override their
+    // own slot below; the rest keep the line.
+    holdOffsideLine(ctx.defenderBase, m_pendingEvent.isHome);
     ctx.isGoal = (m_pendingEvent.outcome == EventOutcome::Goal);
     ctx.isSave = (m_pendingEvent.outcome == EventOutcome::Saved);
     ctx.isMiss = (!ctx.isGoal && !ctx.isSave);

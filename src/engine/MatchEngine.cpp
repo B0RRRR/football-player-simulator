@@ -350,7 +350,19 @@ void MatchEngine::processMinigameResult(const MinigameResult& result) {
         } else if (result.kind == MinigameActionKind::Pass) {
             if (lofted) addLog("Inch-perfect through ball! " + m_player->name + " splits the defense and creates a huge chance!", EventType::Chance, m_isHome, EventOutcome::PassGood);
             else addLog("Great pass! " + m_player->name + " creates a dangerous chance.", EventType::Chance, m_isHome, EventOutcome::PassGood);
-            simulateAIEvent(true);
+            // The chance a good pass sets up now converts about as often as taking the shot
+            // yourself, so passing and shooting are roughly equally rewarding (it used to be a
+            // flat 15%, a third of a shot). The passer gets the assist. A through ball puts a
+            // team-mate in a better spot, so it converts a touch higher than a ground pass.
+            int conv = lofted ? 42 : 34;
+            if (rand() % 100 < conv) {
+                addLog("GOAL! " + m_playerClub->name + " scores - assisted by " + m_player->name + "!", EventType::Goal, m_isHome, EventOutcome::Goal);
+                m_player->assists++;
+            } else if (rand() % 2 == 0) {
+                addLog("The chance goes begging - the finish is dragged wide.", EventType::Chance, m_isHome, EventOutcome::Miss);
+            } else {
+                addLog("A good chance, but the keeper saves it!", EventType::Chance, !m_isHome, EventOutcome::Saved);
+            }
         } else if (result.kind == MinigameActionKind::Tackle) {
             if (slide) addLog("Perfectly timed slide tackle! " + m_player->name + " dispossesses the attacker.", EventType::Chance, m_isHome, EventOutcome::TackleWon);
             else addLog("Great tackle! " + m_player->name + " wins the ball back.", EventType::Chance, m_isHome, EventOutcome::TackleWon);

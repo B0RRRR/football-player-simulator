@@ -54,8 +54,10 @@ public:
     // off-position stats are low. Weights per position sum to 1.
     int positionalRating() const;
 
-    int goals;
-    int assists;
+    int goals;   // THIS season (reset each summer, like AI squad-mates)
+    int assists; // THIS season
+    int careerGoals = 0;   // lifetime total, accumulated at season end
+    int careerAssists = 0;
     int experience;
 
     PlayerPosition position;

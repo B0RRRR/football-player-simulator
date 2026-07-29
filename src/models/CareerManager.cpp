@@ -71,6 +71,48 @@ void CareerManager::resetCareer() {
     m_summerDay = 0;
     m_isSummerBreak = false;
     m_gameManager->getDatabase().init();
+    seedEuropeanCupsByStrength(); // so the very first season already has European cups
+}
+
+void CareerManager::seedEuropeanCupsByStrength() {
+    Database& db = m_gameManager->getDatabase();
+    const auto& leagues = db.getLeagues();
+
+    // Mirrors endSeason's allocation (3 CL + best 4th; 2 EL + remaining 4ths + top two 7ths
+    // per top division) but ranks by club strength instead of a league table that doesn't
+    // exist yet. Five top divisions -> exactly 16 CL and 16 EL, which initTournaments needs.
+    std::vector<Club*> clClubs, elClubs, fourthPlaces, seventhPlaces;
+    for (size_t i = 0; i < leagues.size(); i += 2) { // even indices are the top divisions
+        if (i + 1 >= leagues.size()) break;
+        const League& l = leagues[i];
+
+        std::vector<Club*> ranked;
+        for (const auto& c : l.clubs) {
+            if (Club* cp = db.getClub(l.name, c.name)) ranked.push_back(cp);
+        }
+        std::sort(ranked.begin(), ranked.end(), [](Club* a, Club* b) { return a->strength > b->strength; });
+
+        for (int rank = 0; rank < 7 && rank < (int)ranked.size(); ++rank) {
+            Club* c = ranked[rank];
+            if (rank < 3) clClubs.push_back(c);
+            else if (rank == 3) fourthPlaces.push_back(c);
+            else if (rank < 6) elClubs.push_back(c);
+            else if (rank == 6) seventhPlaces.push_back(c);
+        }
+    }
+
+    std::sort(fourthPlaces.begin(), fourthPlaces.end(), [](Club* a, Club* b) { return a->strength > b->strength; });
+    std::sort(seventhPlaces.begin(), seventhPlaces.end(), [](Club* a, Club* b) { return a->strength > b->strength; });
+    if (!fourthPlaces.empty()) {
+        clClubs.push_back(fourthPlaces[0]);
+        for (size_t i = 1; i < fourthPlaces.size(); ++i) elClubs.push_back(fourthPlaces[i]);
+    }
+    if (seventhPlaces.size() >= 2) {
+        elClubs.push_back(seventhPlaces[0]);
+        elClubs.push_back(seventhPlaces[1]);
+    }
+
+    db.initTournaments(clClubs, elClubs);
 }
 
 CalendarDayType CareerManager::getDayType() const {
@@ -717,7 +759,13 @@ void CareerManager::startSummerBreak() {
         p->isCalledUp = false;
     }
     
-    // Reset player season stats
+    // Reset player season stats. goals/assists are per-season (the Squad screen and Golden
+    // Boot compare them against AI squad-mates' season tallies, which DO reset) - the user's
+    // just never got zeroed, so his numbers ballooned while everyone else's reset each year.
+    p->careerGoals += p->goals;
+    p->careerAssists += p->assists;
+    p->goals = 0;
+    p->assists = 0;
     p->totalSeasonRating = 0.0f;
     p->matchesPlayedThisSeason = 0;
     

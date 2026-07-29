@@ -40,6 +40,9 @@ public:
     Club* getInternationalOpponent() const;
     bool isHomeInternationalMatch() const;
     
+    // Seed the Champions/Europa League for the opening season, when there are no standings
+    // yet - the entrants are the strongest clubs of each top division.
+    void seedEuropeanCupsByStrength();
     void simulateEuropeanMatches(bool simulatePlayerClub = false);
     void simulateInternationalMatches(bool simulatePlayerClub = false);
     void skipSeason();

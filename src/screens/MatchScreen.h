@@ -123,6 +123,7 @@ private:
     // Forward-coordinate (X) of the offside line for a team attacking: the second-rearmost
     // defender of the side they're attacking. A runner beyond it is offside.
     float offsideLineX(bool attackingHome) const;
+    void holdOffsideLine(int defenderBase, bool attackingHome); // back four holds one flat line
     // Whistle for offside and restart to the defending side. offenderIsHome names the
     // ATTACKING team that strayed offside.
     void resolveOffside(bool attackingHome);
@@ -287,6 +288,53 @@ private:
     bool m_boxFoulRolled = false;       // this attack has already rolled for a foul near the box
     int m_attackWingerIdx = -1;
     float m_shotTargetY = 290.f;
+
+    // "Draw & strike" shot minigame. Phase 1: hold LMB by the ball and trace the ball's path
+    // freehand with the cursor - a polyline of finite length. Phase 2: a power bar. The ball
+    // then follows the drawn path and, once it runs out, carries straight on along the last
+    // heading until it crosses the goal line (existing detection/keeper save resolve it).
+    enum class ShotStage { None, Aiming, Power };
+    ShotStage m_shotStage = ShotStage::None;
+    MinigameActionKind m_drawKind = MinigameActionKind::Shot; // Shot or Pass shares the draw UI
+    int m_drawButton = 0;                // mouse button that started the draw (0=L shot, 1=R pass)
+    ActionVariant m_drawVariant = ActionVariant::Default;     // captured at begin (e.g. lofted pass)
+    // A saved shot holds for a real-time beat so the stop is actually seen (the ball at the
+    // keeper), then either he gathers it or it's pushed out for a corner.
+    bool m_saveHold = false;
+    float m_saveHoldT = 0.f;
+    bool m_saveParried = false;
+    sf::Vector2f m_saveContact;
+    int m_saveGkIdx = -1;
+    MinigameActionKind m_saveKind = MinigameActionKind::Shot;
+
+    // A dispossession in progress: an opponent (or the rushing keeper) runs onto the ball and
+    // takes it, rather than the ball teleporting to him.
+    bool m_stealHold = false;
+    float m_stealHoldT = 0.f;
+    int m_stealThief = -1;
+
+    sf::Vector2f m_shotFrom;              // the ball, first point of the path
+    sf::Vector2f m_shotGoalAxis{1.f, 0.f};// unit vector from the ball toward the target goal
+    float m_shotCurlSign = 0.f;          // locked bend direction (+/-1); a real curl never S-bends
+    std::vector<sf::Vector2f> m_shotPath; // traced path points (world coords)
+    float m_shotPathLen = 0.f;           // accumulated length, capped so it can't reach forever
+    float m_shotPowerT = 0.f;            // 0..1 power marker
+    float m_shotPowerDir = 1.f;
+
+    bool  m_shotCurveActive = false;     // the struck ball is travelling the path
+    float m_shotFlightDist = 0.f;        // distance covered along the path so far
+    float m_shotFlightSpeed = 600.f;     // px/s, from the power bar
+    sf::Vector2f m_shotEndDir{1.f, 0.f}; // heading of the final segment (straight continuation)
+
+    void beginDrawAction(MinigameActionKind kind, int button, ActionVariant variant);
+    void addShotPathPoint(sf::Vector2f p); // append the raw cursor point (jitter + length cap)
+    void constrainShotPath();              // on release: resample + limit curvature to a plausible arc
+    void smoothShotPath();                 // Chaikin pass so the traced line reads as a curve
+    void launchDrawnAction();              // dispatches to the shot / pass launch by m_drawKind
+    void launchDrawnShot();
+    void launchDrawnPass();
+    void resolveDrawnPass();               // the drawn pass reached its end - deliver / intercept
+    sf::Vector2f shotPointAt(float dist) const; // position `dist` along path, then straight on
 
     // Goalkeeper "read & dive" save: instead of a timing bar, the keeper reads the flight
     // and commits a dive to a corner. He saves it if he picks the right side (the reach he
