@@ -18,6 +18,7 @@ void Player::reset() {
     passing = 50;
     tackling = 50;
     goalkeeping = 50;
+    dribbling = 50;
     potential = 88;
     goals = 0;
     assists = 0;
@@ -40,18 +41,19 @@ int Player::overall() const {
     if (usesPassing())     { sum += passing;     ++n; }
     if (usesTackling())    { sum += tackling;    ++n; }
     if (usesGoalkeeping()) { sum += goalkeeping; ++n; }
+    if (usesDribbling())   { sum += dribbling;   ++n; }
     return n ? sum / n : 0;
 }
 
 int Player::positionalRating() const {
-    // Weights sum to 1.0 per row: {shooting, passing, tackling, goalkeeping}. Attributes
-    // the position doesn't use carry zero weight.
-    float s = 0.f, p = 0.f, t = 0.f, g = 0.f;
+    // Weights sum to 1.0 per row: {shooting, passing, tackling, goalkeeping, dribbling}.
+    // Attributes the position doesn't use carry zero weight.
+    float s = 0.f, p = 0.f, t = 0.f, g = 0.f, d = 0.f;
     switch (position) {
-        case PlayerPosition::Forward:    s = 0.60f; p = 0.30f; t = 0.10f; break;
-        case PlayerPosition::Midfielder: s = 0.25f; p = 0.45f; t = 0.30f; break;
-        case PlayerPosition::Defender:   s = 0.15f; p = 0.30f; t = 0.55f; break;
-        case PlayerPosition::Goalkeeper:            p = 0.15f; t = 0.20f; g = 0.65f; break;
+        case PlayerPosition::Forward:    s = 0.50f; p = 0.25f; t = 0.10f; d = 0.15f; break;
+        case PlayerPosition::Midfielder: s = 0.22f; p = 0.40f; t = 0.26f; d = 0.12f; break;
+        case PlayerPosition::Defender:   s = 0.12f; p = 0.26f; t = 0.52f; d = 0.10f; break;
+        case PlayerPosition::Goalkeeper:            p = 0.15f; t = 0.20f; g = 0.65f;            break;
     }
-    return (int)(shooting * s + passing * p + tackling * t + goalkeeping * g + 0.5f);
+    return (int)(shooting * s + passing * p + tackling * t + goalkeeping * g + dribbling * d + 0.5f);
 }

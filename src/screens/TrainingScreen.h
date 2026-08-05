@@ -3,6 +3,9 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <string>
+#include <memory>
+
+class DrillArena;
 
 enum class TrainingState {
     Intro,
@@ -13,7 +16,8 @@ enum class TrainingState {
 class TrainingScreen : public Screen {
 public:
     TrainingScreen();
-    
+    ~TrainingScreen() override;           // defined in .cpp where DrillArena is complete
+
     void init() override;
     void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
     void update(sf::Time deltaTime) override;
@@ -30,6 +34,14 @@ private:
     int m_maxScore;
     int m_xpEarned;
     float m_timeRemaining;
+
+    // New drill path (reuses the match minigames via DrillArena). Used for roles that have a
+    // rebuilt drill; the old per-role code below is the fallback until they're all migrated.
+    bool m_useDrill = false;
+    std::unique_ptr<DrillArena> m_drill;
+    sf::View m_pitchView;               // 1280x720, matching the match's coordinate frame
+    int m_drillReps = 0, m_drillCount = 0, m_drillGoals = 0;
+    float m_drillResultTimer = 0.f;
     
     sf::Text m_mainText;
     sf::Text m_infoText;

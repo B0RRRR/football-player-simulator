@@ -61,6 +61,7 @@ set(SOURCES
     src/screens/EuropeanCupScreen.cpp
     src/screens/MatchScreen.cpp
     src/screens/MatchScreenEpisodes.cpp
+    src/screens/DrillArena.cpp
     src/screens/UpgradeScreen.cpp
     src/screens/AwardsScreen.cpp
 )

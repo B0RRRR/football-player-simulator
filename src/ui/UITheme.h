@@ -4,6 +4,27 @@
 #include <vector>
 
 namespace UITheme {
+    // Render a std::string as UTF-8, so a Cyrillic (or any non-ASCII) player name shows
+    // correctly. sf::Text::setString(std::string) treats bytes as Latin-1, which mangles
+    // multi-byte UTF-8. ASCII is unchanged, so this is safe to use everywhere.
+    inline sf::String u8(const std::string& s) {
+        return sf::String::fromUtf8(s.begin(), s.end());
+    }
+
+    // Number of UTF-8 code points (letters), not bytes - a Cyrillic letter is two bytes.
+    inline size_t utf8Length(const std::string& s) {
+        size_t n = 0;
+        for (unsigned char c : s) if ((c & 0xC0) != 0x80) ++n;
+        return n;
+    }
+
+    // Append one Unicode code point to a UTF-8 std::string.
+    inline void utf8Append(std::string& s, sf::Uint32 codepoint) {
+        sf::String one(codepoint);
+        std::basic_string<sf::Uint8> bytes = one.toUtf8();
+        s.append(bytes.begin(), bytes.end());
+    }
+
     // Color Palette
     const sf::Color BackgroundDark(15, 20, 35);
     const sf::Color BackgroundLight(35, 45, 75);

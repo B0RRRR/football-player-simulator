@@ -5,11 +5,14 @@
 #include "CareerManager.h"
 #include "AssetManager.h"
 #include "Player.h"
+#include "DrillArena.h"
 #include <cstdlib>
 #include <cmath>
 
 TrainingScreen::TrainingScreen() : m_state(TrainingState::Intro), m_score(0), m_maxScore(5), m_xpEarned(0), m_timeRemaining(15.f) {
 }
+
+TrainingScreen::~TrainingScreen() = default; // here DrillArena is a complete type
 
 void TrainingScreen::init() {
     auto& font = AssetManager::get().getFont("MainFont");
@@ -36,24 +39,21 @@ void TrainingScreen::init() {
     m_btnText.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
     m_btnText.setPosition(400.f, 475.f);
 
-    std::string role;
+    m_pitchView = sf::View(sf::FloatRect(0.f, 0.f, 1280.f, 720.f));
+
+    // All roles now use the rebuilt DrillArena drills (the real match mechanics).
+    m_useDrill = true;
+    std::string role, how;
     if (p->position == PlayerPosition::Forward) {
-        role = "Shooting Drill";
-        m_infoText.setString("Press SPACE when the bar is green to shoot.\nEnergy cost: -15.");
+        role = "Finishing"; how = "Draw shots past the keeper (8 balls).";
+    } else if (p->position == PlayerPosition::Midfielder) {
+        role = "Passing";   how = "Draw passes to a team-mate past the markers (8 balls).";
+    } else if (p->position == PlayerPosition::Defender) {
+        role = "1v1 Duels"; how = "Read the feint and click the ball to win it (8 duels).";
+    } else {
+        role = "Shot-stopping"; how = "Read the shot and click the height you dive to (8 shots).";
     }
-    else if (p->position == PlayerPosition::Midfielder) {
-        role = "Passing Drill";
-        m_infoText.setString("Click on teammates to pass.\nEnergy cost: -15.");
-    }
-    else if (p->position == PlayerPosition::Defender) {
-        role = "Tackling Drill";
-        m_infoText.setString("Press SPACE to Tackle when attacker is in zone.\nEnergy cost: -15.");
-    }
-    else if (p->position == PlayerPosition::Goalkeeper) {
-        role = "Goalkeeping Drill";
-        m_infoText.setString("Click on falling balls to save them.\nEnergy cost: -15.");
-    }
-    
+    m_infoText.setString(how + "\nEnergy cost: -15.");
     m_mainText.setString("Training: " + role);
 }
 
@@ -61,7 +61,27 @@ void TrainingScreen::initGame() {
     m_state = TrainingState::Playing;
     m_score = 0;
     Player* p = m_gameManager->getPlayer();
-    
+
+    if (m_useDrill) {
+        int keeperStr = m_gameManager->getDatabase().getLeagues().empty() ? 65 : 68; // a decent training keeper
+        DrillArena::Kind kind;
+        int stat;
+        switch (p->position) {
+            case PlayerPosition::Defender:
+                kind = DrillArena::Kind::DefenderDuel;   stat = p->tackling;    break;
+            case PlayerPosition::Goalkeeper:
+                kind = DrillArena::Kind::GoalkeeperSave; stat = p->goalkeeping; break;
+            case PlayerPosition::Midfielder:
+                kind = DrillArena::Kind::MidfielderPass; stat = p->passing;     break;
+            case PlayerPosition::Forward:
+            default:
+                kind = DrillArena::Kind::ForwardFinish;  stat = p->shooting;    break;
+        }
+        m_drill = std::make_unique<DrillArena>(kind, stat, p->dribbling, keeperStr);
+        m_drillReps = 8; m_drillCount = 0; m_drillGoals = 0; m_drillResultTimer = 0.f;
+        return;
+    }
+
     if (p->position == PlayerPosition::Forward) {
         m_maxScore = 5;
         m_shotsTaken = 0;
@@ -128,6 +148,9 @@ void TrainingScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
             }
         }
     } 
+    else if (m_state == TrainingState::Playing && m_useDrill && m_drill) {
+        m_drill->handleInput(window, event, m_pitchView);
+    }
     else if (m_state == TrainingState::Playing) {
         Player* p = m_gameManager->getPlayer();
         if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
@@ -310,6 +333,23 @@ void TrainingScreen::updateGame(float dt) {
 }
 
 void TrainingScreen::update(sf::Time deltaTime) {
+    if (m_state == TrainingState::Playing && m_useDrill && m_drill) {
+        float dt = deltaTime.asSeconds();
+        m_drill->update(dt);
+        if (m_drill->repFinished()) {
+            m_drillResultTimer += dt;
+            if (m_drillResultTimer > 1.2f) {                 // let the outcome show
+                if (m_drill->result() == DrillArena::Result::Success) m_drillGoals++;
+                m_drillCount++;
+                m_drillResultTimer = 0.f;
+                if (m_drillCount >= m_drillReps) { m_score = m_drillGoals; m_maxScore = m_drillReps; finishGame(); }
+                else m_drill->nextRep();
+            }
+        }
+        m_infoText.setString("Score: " + std::to_string(m_drillGoals) + " / " + std::to_string(m_drillReps) +
+                             "   (rep " + std::to_string(std::min(m_drillCount + 1, m_drillReps)) + ")");
+        return;
+    }
     if (m_state == TrainingState::Playing) {
         updateGame(deltaTime.asSeconds());
         if (m_state == TrainingState::Playing) {
@@ -390,13 +430,29 @@ void TrainingScreen::drawGame(sf::RenderWindow& window) {
 
 void TrainingScreen::draw(sf::RenderWindow& window) {
     UITheme::drawGradientBackground(window);
+
+    if (m_state == TrainingState::Playing && m_useDrill && m_drill) {
+        // Pitch + drill in the match's coordinate frame, HUD on top in the default view.
+        sf::View prev = window.getView();
+        window.setView(m_pitchView);
+        m_drill->draw(window);
+        window.setView(prev);
+
+        window.draw(m_infoText);
+        auto& font = AssetManager::get().getFont("MainFont");
+        sf::Text hint(m_drill->prompt(), font, 20);
+        hint.setFillColor(UITheme::Highlight);
+        hint.setPosition(100.f, 95.f);
+        window.draw(hint);
+        return;
+    }
+
     window.draw(m_mainText);
     window.draw(m_infoText);
-    
     if (m_state == TrainingState::Intro || m_state == TrainingState::Result) {
         window.draw(m_btnRect);
         window.draw(m_btnText);
-    } 
+    }
     else if (m_state == TrainingState::Playing) {
         drawGame(window);
     }

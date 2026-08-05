@@ -342,6 +342,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         if (p->usesShooting())    attrs += "Shooting: " + std::to_string(p->shooting) + "   ";
         if (p->usesPassing())     attrs += "Passing: " + std::to_string(p->passing) + "   ";
         if (p->usesTackling())    attrs += "Tackling: " + std::to_string(p->tackling) + "   ";
+        if (p->usesDribbling())   attrs += "Dribbling: " + std::to_string(p->dribbling) + "   ";
         if (p->usesGoalkeeping()) attrs += "Goalkeeping: " + std::to_string(p->goalkeeping) + "   ";
         stats += attrs + "\n";
         stats += "Morale: " + std::to_string(p->morale) + "\n";
@@ -349,7 +350,7 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         stats += "XP: " + std::to_string(p->experience) + "\n";
         stats += "Money: $" + std::to_string(p->money) + "\n";
         stats += "Salary: $" + std::to_string(p->salary) + "/w\n";
-        m_playerStatsText.setString(stats);
+        m_playerStatsText.setString(UITheme::u8(stats)); // stats include the (possibly Cyrillic) name
         
         if (cm && cm->isSummerBreak()) {
             if (cm->hasInternationalMatchToday()) {

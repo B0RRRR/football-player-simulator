@@ -28,6 +28,7 @@ public:
     int passing; // 1 to 100
     int tackling; // 1 to 100
     int goalkeeping; // 1 to 100
+    int dribbling; // 1 to 100
 
     // The ceiling any single attribute can be trained to. Rolled once at career creation,
     // so a youngster can't max everything to 99 in a season - reaching even his own cap
@@ -40,6 +41,8 @@ public:
     // drag his rating down.
     bool usesShooting()    const { return position != PlayerPosition::Goalkeeper; }
     bool usesGoalkeeping() const { return position == PlayerPosition::Goalkeeper; }
+    // Ball-carrying skill: everyone outfield dribbles; a keeper doesn't take players on.
+    bool usesDribbling()   const { return position != PlayerPosition::Goalkeeper; }
     bool usesPassing()     const { return true; } // everyone passes
     // Keepers keep tackling: it's their sweeping / rushing off the line / one-on-ones. It
     // also keeps every position on three trainable attributes, so no role reaches a high

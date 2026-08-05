@@ -34,6 +34,7 @@ void UpgradeScreen::init() {
     if (!pl || pl->usesShooting())    actions.push_back("Shooting");
     if (!pl || pl->usesPassing())     actions.push_back("Passing");
     if (!pl || pl->usesTackling())    actions.push_back("Tackling");
+    if (!pl || pl->usesDribbling())   actions.push_back("Dribbling");
     if (!pl || pl->usesGoalkeeping()) actions.push_back("Goalkeeping");
     actions.push_back("Coach");
     actions.push_back("Car");
@@ -85,6 +86,12 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
                         player->experience -= cost;
                         player->tackling++;
                     }
+                } else if (btn.action == "Dribbling") {
+                    int cost = player->dribbling * 5;
+                    if (player->experience >= cost && player->dribbling < player->potential) {
+                        player->experience -= cost;
+                        player->dribbling++;
+                    }
                 } else if (btn.action == "Goalkeeping") {
                     int cost = player->goalkeeping * 5;
                     if (player->experience >= cost && player->goalkeeping < player->potential) {
@@ -98,6 +105,7 @@ void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event
                         if (player->usesShooting()    && player->shooting    < player->potential) player->shooting    += 1;
                         if (player->usesPassing()     && player->passing     < player->potential) player->passing     += 1;
                         if (player->usesTackling()    && player->tackling    < player->potential) player->tackling    += 1;
+                        if (player->usesDribbling()   && player->dribbling   < player->potential) player->dribbling   += 1;
                         if (player->usesGoalkeeping() && player->goalkeeping < player->potential) player->goalkeeping += 1;
                     }
                 } else if (btn.action == "Car") {
@@ -134,6 +142,7 @@ void UpgradeScreen::update(sf::Time deltaTime) {
     if (p->usesShooting())    stats += "Shooting: " + std::to_string(p->shooting) + " | ";
     if (p->usesPassing())     stats += "Passing: " + std::to_string(p->passing) + " | ";
     if (p->usesTackling())    stats += "Tackling: " + std::to_string(p->tackling) + " | ";
+    if (p->usesDribbling())   stats += "Dribbling: " + std::to_string(p->dribbling) + " | ";
     if (p->usesGoalkeeping()) stats += "Goalkeeping: " + std::to_string(p->goalkeeping) + " | ";
     if (stats.size() >= 3) stats.erase(stats.size() - 3);
     stats += "\nOverall: " + std::to_string(p->overall()) + "   Potential (cap): " + std::to_string(p->potential) +
@@ -153,6 +162,8 @@ void UpgradeScreen::update(sf::Time deltaTime) {
             btn.text.setString(label("Passing", p->passing));
         } else if (btn.action == "Tackling") {
             btn.text.setString(label("Tackling", p->tackling));
+        } else if (btn.action == "Dribbling") {
+            btn.text.setString(label("Dribbling", p->dribbling));
         } else if (btn.action == "Goalkeeping") {
             btn.text.setString(label("Goalkeeping", p->goalkeeping));
         } else if (btn.action == "Coach") {

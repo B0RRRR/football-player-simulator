@@ -226,7 +226,7 @@ void AwardsScreen::showCurrentAward() {
     if (m_currentAwardIndex < m_awards.size()) {
         const auto& aw = m_awards[m_currentAwardIndex];
         m_awardTitleText.setString(aw.title);
-        m_winnerNameText.setString(aw.winnerName + " (" + aw.winnerClub + ")");
+        m_winnerNameText.setString(UITheme::u8(aw.winnerName + " (" + aw.winnerClub + ")"));
         if (aw.isRealPlayer) {
             m_winnerNameText.setFillColor(sf::Color::Green);
         } else {

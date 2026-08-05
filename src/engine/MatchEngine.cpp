@@ -44,7 +44,7 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
             userIsPlaying = false; m_userStartReason = "Status: BENCHED (Low Trust)";
         } else if (m_player->energy < 50.0f) {
             userIsPlaying = false; m_userStartReason = "Status: LEFT OUT (Too Tired)";
-        } else if (playerStr < clubStr - 15) {
+        } else if (playerStr < clubStr - 25) {
             userIsPlaying = false; m_userStartReason = "Status: BENCHED (Stats too low)";
         }
     } else {
@@ -354,14 +354,14 @@ void MatchEngine::processMinigameResult(const MinigameResult& result) {
             // yourself, so passing and shooting are roughly equally rewarding (it used to be a
             // flat 15%, a third of a shot). The passer gets the assist. A through ball puts a
             // team-mate in a better spot, so it converts a touch higher than a ground pass.
+            // Convert some of them into a goal (assist to the passer). On a NON-goal, emit
+            // nothing else: the ball simply stays with the team-mate you found and open play
+            // continues. Emitting a "saved"/"missed" chance here handed the ball straight to
+            // the opponent, which looked like your man instantly gave it to the other team.
             int conv = lofted ? 42 : 34;
             if (rand() % 100 < conv) {
                 addLog("GOAL! " + m_playerClub->name + " scores - assisted by " + m_player->name + "!", EventType::Goal, m_isHome, EventOutcome::Goal);
                 m_player->assists++;
-            } else if (rand() % 2 == 0) {
-                addLog("The chance goes begging - the finish is dragged wide.", EventType::Chance, m_isHome, EventOutcome::Miss);
-            } else {
-                addLog("A good chance, but the keeper saves it!", EventType::Chance, !m_isHome, EventOutcome::Saved);
             }
         } else if (result.kind == MinigameActionKind::Tackle) {
             if (slide) addLog("Perfectly timed slide tackle! " + m_player->name + " dispossesses the attacker.", EventType::Chance, m_isHome, EventOutcome::TackleWon);

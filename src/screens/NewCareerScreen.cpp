@@ -157,10 +157,15 @@ void NewCareerScreen::rebuildButtons() {
 void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     if (m_state == SetupState::InputName) {
         if (event.type == sf::Event::TextEntered) {
-            if (event.text.unicode == '\b' && !m_playerName.empty()) {
-                m_playerName.pop_back();
-            } else if (event.text.unicode >= 32 && event.text.unicode < 128 && m_playerName.size() < 20) {
-                m_playerName += static_cast<char>(event.text.unicode);
+            if (event.text.unicode == '\b') {
+                // Backspace: drop one whole UTF-8 code point (a Cyrillic letter is 2 bytes).
+                while (!m_playerName.empty() && (m_playerName.back() & 0xC0) == 0x80) m_playerName.pop_back();
+                if (!m_playerName.empty()) m_playerName.pop_back();
+            } else if (event.text.unicode >= 32 && event.text.unicode != 127
+                       && UITheme::utf8Length(m_playerName) < 20) {
+                // Accept any printable character (Latin, Cyrillic, ...) and store it as UTF-8,
+                // so the field no longer depends on the OS keyboard layout being English.
+                UITheme::utf8Append(m_playerName, static_cast<sf::Uint32>(event.text.unicode));
             }
         }
         if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
@@ -205,7 +210,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
                     // ceiling, rolled here, so nobody maxes out in a single season.
                     int primary = 56 + (rand() % 7);   // 56-62
                     auto sec = [&]() { return 42 + (rand() % 9); }; // 42-50
-                    p->shooting = sec(); p->passing = sec(); p->tackling = sec(); p->goalkeeping = sec();
+                    p->shooting = sec(); p->passing = sec(); p->tackling = sec(); p->goalkeeping = sec(); p->dribbling = sec();
                     switch (p->position) {
                         case PlayerPosition::Forward:    p->shooting = primary; break;
                         case PlayerPosition::Midfielder: p->passing = primary; break;
@@ -252,7 +257,7 @@ void NewCareerScreen::handleInput(sf::RenderWindow& window, const sf::Event& eve
 
 void NewCareerScreen::update(sf::Time deltaTime) {
     if (m_state == SetupState::InputName) {
-        m_inputText.setString(m_playerName + "_");
+        m_inputText.setString(UITheme::u8(m_playerName) + "_");
     } else {
         m_inputText.setString("");
     }

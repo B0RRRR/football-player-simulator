@@ -246,6 +246,7 @@ private:
     sf::Vector2f m_cornerAimOffset;      // how far off the man a poor delivery lands
     float m_cornerWindup = 0.f;
     int m_cornerTargetIdx = -1;      // who the delivery is aimed at
+    sf::Vector2f m_cornerAimBase;    // his box ANCHOR (aim here, not his live spot mid-run)
     int m_cornerCrowd[12] = {0};
     sf::Vector2f m_cornerCrowdPos[12];
     int m_cornerCrowdCount = 0;
@@ -307,6 +308,17 @@ private:
     int m_saveGkIdx = -1;
     MinigameActionKind m_saveKind = MinigameActionKind::Shot;
 
+    // Defender 1v1 duel: the attacker dribbles at you and jinks the ball; you time a click on
+    // the ball to nick it. A read-and-react tackle instead of a plain timing bar.
+    bool m_defDuel = false;
+    float m_defDuelT = 0.f;
+    float m_defFeintClock = 0.f;
+    sf::Vector2f m_defFeintVec;      // smoothed ball offset from the attacker's feet
+    sf::Vector2f m_defFeintTarget;   // where it's jinking toward (changes fast, any direction)
+    bool m_defDuelActed = false;
+    int m_defDuelAttacker = -1;
+    void resolveDefenderDuel(bool won);
+
     // A dispossession in progress: an opponent (or the rushing keeper) runs onto the ball and
     // takes it, rather than the ball teleporting to him.
     bool m_stealHold = false;
@@ -333,7 +345,9 @@ private:
     void launchDrawnAction();              // dispatches to the shot / pass launch by m_drawKind
     void launchDrawnShot();
     void launchDrawnPass();
-    void resolveDrawnPass();               // the drawn pass reached its end - deliver / intercept
+    // Resolve a drawn pass. receiver >=0 = the team-mate it reached (delivered by pass stat);
+    // intercepted = an opponent got in the lane; receiver <0 & !intercepted = played into space.
+    void resolveDrawnPass(int receiver, bool intercepted);
     sf::Vector2f shotPointAt(float dist) const; // position `dist` along path, then straight on
 
     // Goalkeeper "read & dive" save: instead of a timing bar, the keeper reads the flight
@@ -341,6 +355,9 @@ private:
     // covers scales with his goalkeeping), not by pressing at the right instant.
     bool m_gkDiveMode = false;   // this save is the directional minigame, not the timing bar
     bool m_gkDived = false;      // he has committed his dive
+    bool m_gkCommittedRush = false; // he rushed off his line and the striker shot anyway (out of position)
+    float m_stuckTimer = 0.f;    // watchdog: real time the engine minute has been frozen
+    int m_lastWatchMin = -1;     // last minute the watchdog saw advance
     bool m_gkDiveSaved = false;  // the committed dive is a save (drives the parry visual)
     float m_gkShotClock = 0.f;   // time since the shot was struck
     float m_gkFlightTime = 1.4f; // how long the ball takes to reach the line
@@ -399,6 +416,17 @@ private:
     ActionVariant m_pendingVariant = ActionVariant::Default;
     MinigameActionKind m_pendingKind = MinigameActionKind::Shot;
     float m_ballLoftTimer = 0.f;
+
+    // Dribble (take on the nearest opponent) while carrying the ball, on the Q key. Polled
+    // in updateMinigame (edge-triggered) rather than off key events, which don't reliably
+    // reach the screen. m_dribbleCd rate-limits taps so it isn't a per-press machine gun.
+    bool  m_qPrevMatch = false;
+    float m_dribbleCd = 0.f;
+    // A successful take-on drives you forward for a beat: the player auto-runs along
+    // m_userMoveDir (toward goal) while this is >0, so it reads as accelerating past your
+    // man rather than teleporting behind him.
+    float m_dribbleBurst = 0.f;
+    void tryMatchDribble();
 
     // Rate-limits opponent tackle attempts. Without it the duel roll runs every frame,
     // so at 60fps even a 40% chance lands within a couple of frames and the ball is
