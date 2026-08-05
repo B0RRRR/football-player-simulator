@@ -32,15 +32,19 @@ private:
     std::string m_selectedLeague;
     std::string m_selectedClub;
 
-    sf::Text m_titleText;
-    sf::Text m_infoText;
-    sf::Text m_inputText; // For name input
-    
+    std::string m_title;
+    std::string m_info;
+
     struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
+        sf::FloatRect bounds;
+        std::string label;
         std::string action;
+        std::string flag;   // country name for a flag card (empty = plain button)
+        std::string logo;   // club name for a logo card (empty = plain button)
     };
-    
+
     std::vector<Button> m_buttons;
+    int m_hoverIdx = -1;
+    int m_pressedIdx = -1;
+    float m_caret = 0.f; // blinking caret timer for the name field
 };

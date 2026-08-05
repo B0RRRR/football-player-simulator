@@ -1,198 +1,140 @@
 #include "UITheme.h"
+#include "UIKit.h"
 #include "UpgradeScreen.h"
 #include "CareerHubScreen.h"
 #include "AssetManager.h"
 #include "GameManager.h"
-#include <iostream>
 
 UpgradeScreen::UpgradeScreen() {
 }
 
 void UpgradeScreen::init() {
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    m_titleText.setFont(font);
-    m_titleText.setString("Training & Upgrades");
-    m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(sf::Color::White);
-    m_titleText.setPosition(200.f, 50.f);
-    
-    m_xpText.setFont(font);
-    m_xpText.setCharacterSize(26);
-    m_xpText.setFillColor(sf::Color::Yellow);
-    m_xpText.setPosition(200.f, 100.f);
-    
-    m_statsText.setFont(font);
-    m_statsText.setCharacterSize(20);
-    m_statsText.setFillColor(sf::Color::White);
-    m_statsText.setPosition(200.f, 140.f);
-    
-    // Only offer the attributes this position actually uses - an outfielder has no reason
-    // to train goalkeeping, and a keeper none to train shooting.
+    m_rows.clear();
+    m_hoverIdx = m_pressedIdx = -1;
+
     Player* pl = m_gameManager->getPlayer();
-    std::vector<std::string> actions;
-    if (!pl || pl->usesShooting())    actions.push_back("Shooting");
-    if (!pl || pl->usesPassing())     actions.push_back("Passing");
-    if (!pl || pl->usesTackling())    actions.push_back("Tackling");
-    if (!pl || pl->usesDribbling())   actions.push_back("Dribbling");
-    if (!pl || pl->usesGoalkeeping()) actions.push_back("Goalkeeping");
-    actions.push_back("Coach");
-    actions.push_back("Car");
-    actions.push_back("Back");
-    float startY = 280.f;
-    
-    for (size_t i = 0; i < actions.size(); ++i) {
-        Button btn;
-        
-        btn.rect.setSize(sf::Vector2f(400.f, 40.f));
-        btn.rect.setPosition(200.f, startY + i * 50.f);
-        btn.rect.setFillColor(UITheme::ButtonNormal);
-        
-        btn.text.setFont(font);
-        // Text is set dynamically in update()
-        btn.text.setString("");
-        btn.text.setCharacterSize(24);
-        btn.text.setFillColor(sf::Color::White);
-        
-        btn.action = actions[i];
-        m_buttons.push_back(btn);
+    struct Def { std::string action, icon; };
+    std::vector<Def> defs;
+    if (!pl || pl->usesShooting())    defs.push_back({"Shooting", "target"});
+    if (!pl || pl->usesPassing())     defs.push_back({"Passing", "arrow"});
+    if (!pl || pl->usesTackling())    defs.push_back({"Tackling", "shield"});
+    if (!pl || pl->usesDribbling())   defs.push_back({"Dribbling", "weave"});
+    if (!pl || pl->usesGoalkeeping()) defs.push_back({"Goalkeeping", "glove"});
+    defs.push_back({"Coach", "chart"});
+    defs.push_back({"Car", "smiley"});
+
+    const float x = 500.f, w = 620.f, h = 54.f, gap = 62.f, y0 = 210.f;
+    for (size_t i = 0; i < defs.size(); ++i) {
+        Row r;
+        r.bounds = sf::FloatRect(x, y0 + i * gap, w, h);
+        r.action = defs[i].action; r.icon = defs[i].icon;
+        m_rows.push_back(r);
+    }
+    // Back button.
+    Row back; back.bounds = sf::FloatRect(x, y0 + defs.size() * gap + 8.f, 260.f, 50.f); back.action = "Back";
+    m_rows.push_back(back);
+}
+
+void UpgradeScreen::dispatch(const std::string& action) {
+    Player* p = m_gameManager->getPlayer();
+    if (!p) return;
+    auto buy = [&](int& stat) {
+        int cost = stat * 5;
+        if (p->experience >= cost && stat < p->potential) { p->experience -= cost; stat++; }
+    };
+    if (action == "Back")            m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+    else if (action == "Shooting")    buy(p->shooting);
+    else if (action == "Passing")     buy(p->passing);
+    else if (action == "Tackling")    buy(p->tackling);
+    else if (action == "Dribbling")   buy(p->dribbling);
+    else if (action == "Goalkeeping") buy(p->goalkeeping);
+    else if (action == "Coach") {
+        if (p->money >= 25000) {
+            p->money -= 25000;
+            if (p->usesShooting()    && p->shooting    < p->potential) p->shooting++;
+            if (p->usesPassing()     && p->passing     < p->potential) p->passing++;
+            if (p->usesTackling()    && p->tackling    < p->potential) p->tackling++;
+            if (p->usesDribbling()   && p->dribbling   < p->potential) p->dribbling++;
+            if (p->usesGoalkeeping() && p->goalkeeping < p->potential) p->goalkeeping++;
+        }
+    } else if (action == "Car") {
+        if (p->money >= 20000) { p->money -= 20000; p->morale = std::min(100, p->morale + 50); }
     }
 }
 
 void UpgradeScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        Player* player = m_gameManager->getPlayer();
-        
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                if (btn.action == "Back") {
-                    m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
-                } else if (btn.action == "Shooting") {
-                    int cost = player->shooting * 5;
-                    if (player->experience >= cost && player->shooting < player->potential) {
-                        player->experience -= cost;
-                        player->shooting++;
-                    }
-                } else if (btn.action == "Passing") {
-                    int cost = player->passing * 5;
-                    if (player->experience >= cost && player->passing < player->potential) {
-                        player->experience -= cost;
-                        player->passing++;
-                    }
-                } else if (btn.action == "Tackling") {
-                    int cost = player->tackling * 5;
-                    if (player->experience >= cost && player->tackling < player->potential) {
-                        player->experience -= cost;
-                        player->tackling++;
-                    }
-                } else if (btn.action == "Dribbling") {
-                    int cost = player->dribbling * 5;
-                    if (player->experience >= cost && player->dribbling < player->potential) {
-                        player->experience -= cost;
-                        player->dribbling++;
-                    }
-                } else if (btn.action == "Goalkeeping") {
-                    int cost = player->goalkeeping * 5;
-                    if (player->experience >= cost && player->goalkeeping < player->potential) {
-                        player->experience -= cost;
-                        player->goalkeeping++;
-                    }
-                } else if (btn.action == "Coach") {
-                    if (player->money >= 25000) {
-                        player->money -= 25000;
-                        // Only the attributes he actually trains.
-                        if (player->usesShooting()    && player->shooting    < player->potential) player->shooting    += 1;
-                        if (player->usesPassing()     && player->passing     < player->potential) player->passing     += 1;
-                        if (player->usesTackling()    && player->tackling    < player->potential) player->tackling    += 1;
-                        if (player->usesDribbling()   && player->dribbling   < player->potential) player->dribbling   += 1;
-                        if (player->usesGoalkeeping() && player->goalkeeping < player->potential) player->goalkeeping += 1;
-                    }
-                } else if (btn.action == "Car") {
-                    if (player->money >= 20000) {
-                        player->money -= 20000;
-                        player->morale += 50;
-                        if (player->morale > 100) player->morale = 100;
-                    }
-                }
-            }
-        }
-    }
-    
-    // Hover effects
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(UITheme::ButtonNormal);
-            } else {
-                btn.rect.setFillColor(UITheme::ButtonNormal);
-            }
-        }
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseMove.x, event.mouseMove.y});
+        m_hoverIdx = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i) if (m_rows[i].bounds.contains(m)) m_hoverIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        m_pressedIdx = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i) if (m_rows[i].bounds.contains(m)) m_pressedIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        int rel = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i) if (m_rows[i].bounds.contains(m)) rel = (int)i;
+        if (rel >= 0 && rel == m_pressedIdx) dispatch(m_rows[rel].action);
+        m_pressedIdx = -1;
     }
 }
 
-void UpgradeScreen::update(sf::Time deltaTime) {
-    Player* p = m_gameManager->getPlayer();
-    if (!p) return;
-    
-    m_xpText.setString("Experience (XP): " + std::to_string(p->experience) + "   Money: $" + std::to_string(p->money));
-    
-    std::string stats;
-    if (p->usesShooting())    stats += "Shooting: " + std::to_string(p->shooting) + " | ";
-    if (p->usesPassing())     stats += "Passing: " + std::to_string(p->passing) + " | ";
-    if (p->usesTackling())    stats += "Tackling: " + std::to_string(p->tackling) + " | ";
-    if (p->usesDribbling())   stats += "Dribbling: " + std::to_string(p->dribbling) + " | ";
-    if (p->usesGoalkeeping()) stats += "Goalkeeping: " + std::to_string(p->goalkeeping) + " | ";
-    if (stats.size() >= 3) stats.erase(stats.size() - 3);
-    stats += "\nOverall: " + std::to_string(p->overall()) + "   Potential (cap): " + std::to_string(p->potential) +
-             "   Morale: " + std::to_string(p->morale) + "%";
-    m_statsText.setString(stats);
-
-    // Each upgrade button shows its cost, or MAX once the stat has hit the potential cap.
-    auto label = [&](const char* n, int stat) {
-        return (stat >= p->potential)
-            ? std::string("Upgrade ") + n + " (MAX)"
-            : std::string("Upgrade ") + n + " (" + std::to_string(stat * 5) + " XP)";
-    };
-    for (auto& btn : m_buttons) {
-        if (btn.action == "Shooting") {
-            btn.text.setString(label("Shooting", p->shooting));
-        } else if (btn.action == "Passing") {
-            btn.text.setString(label("Passing", p->passing));
-        } else if (btn.action == "Tackling") {
-            btn.text.setString(label("Tackling", p->tackling));
-        } else if (btn.action == "Dribbling") {
-            btn.text.setString(label("Dribbling", p->dribbling));
-        } else if (btn.action == "Goalkeeping") {
-            btn.text.setString(label("Goalkeeping", p->goalkeeping));
-        } else if (btn.action == "Coach") {
-            btn.text.setString("Personal Coach ($25000) [+1 All Stats]");
-        } else if (btn.action == "Car") {
-            btn.text.setString("Sports Car ($20000) [+50 Morale]");
-        } else if (btn.action == "Back") {
-            btn.text.setString("Back to Hub");
-        }
-        
-        // Recenter text
-        sf::FloatRect textRect = btn.text.getLocalBounds();
-        btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-        btn.text.setPosition(
-            btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-            btn.rect.getPosition().y + btn.rect.getSize().y/2.0f
-        );
-    }
-}
+void UpgradeScreen::update(sf::Time) {}
 
 void UpgradeScreen::draw(sf::RenderWindow& window) {
-    UITheme::drawGradientBackground(window);
-    
-    window.draw(m_titleText);
-    window.draw(m_xpText);
-    window.draw(m_statsText);
-    
-    for (const auto& btn : m_buttons) {
-        window.draw(btn.rect);
-        window.draw(btn.text);
+    auto& font = AssetManager::get().getFont("MainFont");
+    Player* p = m_gameManager->getPlayer();
+
+    UIKit::drawBackground(window);
+    UIKit::drawTitle(window, font, {90.f, 110.f}, "Training & Upgrades", 42);
+
+    // Left resource / summary panel.
+    UIKit::drawPanel(window, {90.f, 200.f, 380.f, 380.f});
+    if (p) {
+        float y = 224.f;
+        auto row = [&](const std::string& ic, sf::Color icc, const std::string& s, sf::Color tc) {
+            UIKit::drawIcon(window, ic, {118.f, y + 18 * 0.55f}, 9.f, icc);
+            UIKit::drawText(window, font, {140.f, y}, s, 18, tc, 1.0f); y += 30.f;
+        };
+        row("chart", UITheme::Accent,    "XP     " + std::to_string(p->experience), UITheme::TextWhite);
+        row("coin",  UITheme::Highlight, "Money  $" + std::to_string(p->money), UITheme::TextWhite);
+        y += 10.f;
+        row("star",   UITheme::Highlight, "Overall    " + std::to_string(p->overall()), UITheme::TextWhite);
+        row("shield", UITheme::Accent,    "Potential  " + std::to_string(p->potential), UITheme::TextDim);
+        row("smiley", UITheme::Accent,    "Morale     " + std::to_string(p->morale) + "%", UITheme::TextDim);
+        y += 10.f;
+        UIKit::drawText(window, font, {118.f, y}, "Spend XP to raise a stat (cost rises with the", 14, UITheme::TextDim, 1.0f);
+        UIKit::drawText(window, font, {118.f, y + 20.f}, "stat). A stat cannot pass your Potential cap.", 14, UITheme::TextDim, 1.0f);
+    }
+
+    // Upgrade rows.
+    for (size_t i = 0; i < m_rows.size(); ++i) {
+        UIKit::BtnState st = UIKit::BtnState::Normal;
+        if ((int)i == m_pressedIdx)     st = UIKit::BtnState::Pressed;
+        else if ((int)i == m_hoverIdx)  st = UIKit::BtnState::Hover;
+
+        const Row& r = m_rows[i];
+        if (r.action == "Back") { UIKit::drawButton(window, font, r.bounds, "Back to Hub", st); continue; }
+        if (!p) continue;
+
+        std::string label, value;
+        sf::Color icc = UITheme::Accent;
+        auto stat = [&](const std::string& name, int v) {
+            bool max = v >= p->potential;
+            label = name + "    " + std::to_string(v);
+            value = max ? "MAX" : (std::to_string(v * 5) + " XP");
+        };
+        if (r.action == "Shooting")         stat("Shooting", p->shooting);
+        else if (r.action == "Passing")     stat("Passing", p->passing);
+        else if (r.action == "Tackling")    stat("Tackling", p->tackling);
+        else if (r.action == "Dribbling")   stat("Dribbling", p->dribbling);
+        else if (r.action == "Goalkeeping") stat("Goalkeeping", p->goalkeeping);
+        else if (r.action == "Coach")  { label = "Personal Coach   +1 all stats"; value = "$25000"; icc = UITheme::Highlight; }
+        else if (r.action == "Car")    { label = "Sports Car   +50 morale";       value = "$20000"; icc = UITheme::Highlight; }
+
+        UIKit::drawIconRow(window, font, r.bounds, r.icon, icc, label, value, st);
     }
 }

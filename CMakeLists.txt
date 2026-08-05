@@ -33,6 +33,7 @@ set(SOURCES
     src/core/Settings.cpp
     src/core/AssetManager.cpp
     src/core/GameManager.cpp
+    src/core/PlatformDisplay.cpp
     src/core/SaveManager.cpp
     
     src/models/Player.cpp
@@ -72,6 +73,25 @@ add_executable(football_sim ${SOURCES})
 # Link SFML libraries
 target_link_libraries(football_sim sfml-graphics sfml-window sfml-system sfml-audio)
 
+# Linux: query exact per-monitor bounds via XRandR so borderless fullscreen lands on a single
+# monitor even when monitors differ in size (SFML 2.x has no multi-monitor API of its own).
+# We declare the RandR API ourselves (see GameManager.cpp), so only the runtime lib is needed -
+# fall back to the versioned soname when the -dev symlink (libXrandr.so) isn't installed.
+if(UNIX AND NOT APPLE)
+    find_library(X11_LIB NAMES X11)
+    find_library(XRANDR_LIB NAMES Xrandr)
+    # If the -dev symlink (libXrandr.so) isn't installed, fall back to the versioned soname.
+    if(NOT XRANDR_LIB)
+        foreach(_d /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /usr/lib /lib)
+            if(EXISTS "${_d}/libXrandr.so.2")
+                set(XRANDR_LIB "${_d}/libXrandr.so.2")
+                break()
+            endif()
+        endforeach()
+    endif()
+    target_link_libraries(football_sim ${X11_LIB} ${XRANDR_LIB})
+endif()
+
 # Copy assets folder to build directory
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -84,6 +104,7 @@ if(BUILD_TESTS)
     add_executable(engine_tests
         tests/engine_tests.cpp
         src/engine/MatchEngine.cpp
+        src/core/Settings.cpp
         src/models/Player.cpp
         src/models/Database.cpp
         src/models/NameGenerator.cpp

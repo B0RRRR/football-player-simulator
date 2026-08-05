@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "UITheme.h"
 #include "ShotPath.h"
+#include "PitchRenderer.h"
 #include <iostream>
 #include <cmath>
 #include <cstdio>
@@ -221,36 +222,9 @@ void MatchScreen::init() {
         m_speedButtons.push_back(btn);
     }
     
-    // 2D Pitch
-    m_pitchRect.setSize(sf::Vector2f(800.f, 320.f));
-    m_pitchRect.setPosition(40.f, 130.f);
-    m_pitchRect.setFillColor(sf::Color(40, 140, 60)); 
-    m_pitchRect.setOutlineThickness(3.f);
-    m_pitchRect.setOutlineColor(sf::Color(200, 200, 200));
-    
-    m_pitchLines.setSize(sf::Vector2f(4.f, 320.f));
-    m_pitchLines.setPosition(440.f, 130.f);
-    m_pitchLines.setFillColor(sf::Color(200, 200, 200));
-    
-    m_pitchCenter.setRadius(40.f);
-    m_pitchCenter.setPosition(400.f, 250.f);
-    m_pitchCenter.setFillColor(sf::Color::Transparent);
-    m_pitchCenter.setOutlineThickness(4.f);
-    m_pitchCenter.setOutlineColor(sf::Color(200, 200, 200));
-    
-    // Goals
-    m_leftGoal.setSize(sf::Vector2f(30.f, 80.f));
-    m_leftGoal.setPosition(10.f, 250.f);
-    m_leftGoal.setFillColor(sf::Color::Transparent);
-    m_leftGoal.setOutlineThickness(3.f);
-    m_leftGoal.setOutlineColor(sf::Color::White);
-    
-    m_rightGoal.setSize(sf::Vector2f(30.f, 80.f));
-    m_rightGoal.setPosition(840.f, 250.f);
-    m_rightGoal.setFillColor(sf::Color::Transparent);
-    m_rightGoal.setOutlineThickness(3.f);
-    m_rightGoal.setOutlineColor(sf::Color::White);
-    
+    // The pitch, halfway line, centre circle and goals are drawn by PitchRenderer (shared with
+    // the training drills), so there is no per-screen geometry to set up here.
+
     float form[11][2] = {
         {0.02f, 0.5f}, {0.2f, 0.2f}, {0.15f, 0.4f}, {0.15f, 0.6f}, {0.2f, 0.8f},
         {0.45f, 0.2f}, {0.4f, 0.4f}, {0.4f, 0.6f}, {0.45f, 0.8f}, {0.7f, 0.35f}, {0.7f, 0.65f}
@@ -336,7 +310,8 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
             if (m_btnSkipRect.getGlobalBounds().contains(mousePos)) {
                 // Auto-sim the rest of the match.
                 Player* skipPlayer = m_gameManager->getPlayer();
-                while (m_engine->getState() != MatchState::Finished) {
+                int skipGuard = 0; // hard cap so a stuck engine state can never hang the app
+                while (m_engine->getState() != MatchState::Finished && ++skipGuard < 100000) {
                     if (m_engine->getState() == MatchState::Simulating) {
                         m_engine->updateMinute();
                     } else if (m_engine->getState() == MatchState::MinigameTriggered) {
@@ -676,24 +651,27 @@ void MatchScreen::update(sf::Time deltaTime) {
     }
 
     if (m_engine->getState() == MatchState::Finished) {
-        // The match is over. Drain the trailing FULL TIME marker (a text-only Normal
-        // event) without waiting for the ball to reach its carrier. The normal log-pop
-        // path below is gated on `distToCarrier < 10`, and since updateMinute only runs
-        // while the queue is empty, an unconsumed FULL TIME log froze the whole sim:
-        // the minute never advanced and the players passed among themselves forever.
-        // At full time there is no more choreography to sync to, so consume it outright.
-        if (m_engine->hasLogs() && m_visualState == VisualState::NormalPlay) {
+        // The match is over. This MUST NOT be gated on being in NormalPlay: if full time
+        // arrived while an episode/minigame/dead-ball state was still active, gating here left
+        // the match frozen with no way forward - the watchdog only runs while Simulating, so a
+        // non-NormalPlay state at Finished hangs the game for good (the "it freezes after the
+        // match ends, and won't even close" bug). So force everything down and leave.
+        if (m_minigameActive) endMinigame();
+        m_defDuel = m_stealHold = m_saveHold = m_gkDiveMode = false;
+        m_shotCurveActive = m_ballStruck = false;
+        m_visualState = VisualState::NormalPlay;
+        // Drain any trailing logs outright (FULL TIME, plus any un-shown chance/goal). There
+        // is no more choreography to sync to.
+        while (m_engine->hasLogs()) {
             MatchEvent e = m_engine->popRecentLog();
             m_engine->commitEvent(e);
             m_visibleLogs.push_back(e);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
         }
-        if (!m_engine->hasLogs() && m_visualState == VisualState::NormalPlay) {
-            m_scriptTimer += deltaTime.asSeconds();
-            if (m_scriptTimer > 2.0f) {
-                m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(m_engine));
-                return;
-            }
+        m_scriptTimer += deltaTime.asSeconds();
+        if (m_scriptTimer > 2.0f) {
+            m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(m_engine));
+            return;
         }
     }
     
@@ -2327,32 +2305,29 @@ void MatchScreen::draw(sf::RenderWindow& window) {
     UITheme::drawGradientBackground(window);
     
     window.setView(m_uiView);
-    
-    window.draw(m_pitchRect); window.draw(m_pitchLines); window.draw(m_pitchCenter);
-    window.draw(m_leftGoal); window.draw(m_rightGoal);
-    
+
+    // All on-pitch art goes through PitchRenderer - the single place future sprites/animation
+    // plug in - shared with the training drills. The match's dots/ball are positioned by their
+    // top-left corner (radius, no origin), while PitchRenderer draws from the centre, so shift
+    // by the radius to land on the exact same pixels.
+    PitchRenderer::drawPitch(window);
+
     Player* p = m_gameManager->getPlayer();
     int userPosIdx = 0;
     if (p->position == PlayerPosition::Defender) userPosIdx = 3;
     else if (p->position == PlayerPosition::Midfielder) userPosIdx = 7;
     else if (p->position == PlayerPosition::Forward) userPosIdx = 10;
-    
+
     for (size_t i = 0; i < m_dots.size(); ++i) {
         int localIdx = (int)i % 11;
-        if (!hasRedCard(i) || (int)i == m_sendOffGraceIdx) {
-            window.draw(m_dots[i].shape);
-        }
-        
-        if (m_dots[i].isHome == m_engine->isHome() && localIdx == userPosIdx && !m_engine->isUserSubbedOff()) {
-            sf::CircleShape hl(10.f);
-            hl.setFillColor(sf::Color::Transparent);
-            hl.setOutlineColor(sf::Color::Yellow);
-            hl.setOutlineThickness(2.f);
-            hl.setPosition(m_dots[i].shape.getPosition().x - 4.f, m_dots[i].shape.getPosition().y - 4.f);
-            window.draw(hl);
-        }
+        bool visible = !hasRedCard(i) || (int)i == m_sendOffGraceIdx;
+        bool isUser = (m_dots[i].isHome == m_engine->isHome() && localIdx == userPosIdx
+                       && !m_engine->isUserSubbedOff());
+        if (visible)
+            PitchRenderer::drawDot(window, m_dots[i].shape.getPosition() + sf::Vector2f(6.f, 6.f),
+                                   m_dots[i].isHome, isUser);
     }
-    window.draw(m_visualBall);
+    PitchRenderer::drawBall(window, m_visualBall.getPosition() + sf::Vector2f(4.f, 4.f));
 
     // Read-and-dive save: highlight the goal mouth the keeper is defending so the two dive
     // halves read clearly. It shows the target area, never where the shot is going.
@@ -2378,9 +2353,7 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         // Yellow for a shot, cyan for a pass, so it's obvious which you're playing.
         sf::Color col = (m_drawKind == MinigameActionKind::Pass) ? sf::Color(90, 210, 255, a)
                                                                  : sf::Color(255, 230, 90, a);
-        sf::VertexArray line(sf::LineStrip, m_shotPath.size());
-        for (size_t s = 0; s < m_shotPath.size(); ++s) { line[s].position = m_shotPath[s]; line[s].color = col; }
-        window.draw(line);
+        PitchRenderer::drawPath(window, m_shotPath, col);
     }
 
     window.setView(m_uiView);

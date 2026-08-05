@@ -13,6 +13,11 @@ struct Settings {
 // Global settings instance
 extern Settings g_settings;
 
+// Current on-screen pixels per design unit (window pixel height / 720). 1.0 when the window is
+// the design size; ~1.5 at 1080p fullscreen, etc. UIKit uses it to rasterise text at the real
+// screen size so it stays crisp when the 1280x720 canvas is scaled up. Updated by GameManager.
+extern float g_renderScale;
+
 // Match speed presets. matchSpeed indexes these; 1x is the baseline the sim/animation
 // are tuned around. Both MatchScreen and SettingsScreen read from here so labels and
 // behaviour never drift apart.

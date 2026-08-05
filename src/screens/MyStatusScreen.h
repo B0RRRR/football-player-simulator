@@ -14,19 +14,19 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Text m_titleText;
-    sf::Text m_infoText;
-    sf::Text m_coachResponseText;
-    
     struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
+        sf::FloatRect bounds;
+        std::string label;
         std::string action;
-        sf::Color baseColor;
     };
-    
+
     std::vector<Button> m_buttons;
-    
+    int m_hoverIdx = -1;
+    int m_pressedIdx = -1;
+
+    std::string m_coachMsg;
     float m_messageTimer = 0.0f;
     bool m_showAchievements = false;
+
+    void dispatch(const std::string& action);
 };

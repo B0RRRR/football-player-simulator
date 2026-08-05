@@ -339,6 +339,7 @@ void MatchScreen::updateMinigameAI(float dt) {
     // and keep the ceiling low enough that dwelling on the ball is risky but not a
     // guaranteed loss.
     int duel = 28 + (oppStrength - (p->passing + p->shooting) / 2) / 2;
+    duel += (g_settings.difficulty - 1) * 6; // Hard: opponents rob you more; Easy: less
     duel = std::clamp(duel, 8, 55);
     if ((rand() % 100) >= duel) return;
 
@@ -1069,9 +1070,12 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
         
         if (m_ballCarrierIdx == -1 || (rand() % 100 < 2 && std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y) < 10.f)) {
             bool pickHome = (mom > 0); if (mom == 0) pickHome = (rand()%2 == 0);
-            do {
+            // Bounded retry: an unbounded do/while here hard-freezes the app (window won't
+            // even close) if every candidate happens to be sent off.
+            for (int tries = 0; tries < 24; ++tries) {
                 m_ballCarrierIdx = (pickHome ? 0 : 11) + 1 + (rand() % 8);
-            } while(hasRedCard(m_ballCarrierIdx));
+                if (!hasRedCard(m_ballCarrierIdx)) break;
+            }
         }
         m_ballTarget = m_dots[m_ballCarrierIdx].shape.getPosition();
         
@@ -1717,9 +1721,12 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     m_gkCommittedRush = false; // fresh each 1v1 (reset here, NOT in initMinigame,
                                                // which runs after the windup has set it)
                     m_stateTimer = 0.f;
-                    do {
+                    // Bounded retry: only two candidates (9,10), so if both are sent off an
+                    // unbounded do/while spins forever and hangs the whole app.
+                    for (int tries = 0; tries < 8; ++tries) {
                         m_attackFwdIdx = ctx.attackerBase + 9 + (rand() % 2);
-                    } while (hasRedCard(m_attackFwdIdx));
+                        if (!hasRedCard(m_attackFwdIdx)) break;
+                    }
                     m_shotTargetY = 290.f + (rand() % 60 - 30.f);
                     m_ballCarrierIdx = m_attackFwdIdx;
                     return;
@@ -2210,9 +2217,12 @@ void MatchScreen::runMidfielderTackle(float dt, const EpisodeCtx& ctx) {
                     m_stateTimer = 0.f;
                     m_ballCarrierIdx = -1;
                     m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(700.f, m_shotTargetY) : sf::Vector2f(180.f, m_shotTargetY);
-                    do {
+                    // Bounded retry (only two candidates): an unbounded do/while hangs the app
+                    // if both are sent off.
+                    for (int tries = 0; tries < 8; ++tries) {
                         m_attackFwdIdx = ctx.attackerBase + 9 + (rand()%2);
-                    } while(hasRedCard(m_attackFwdIdx));
+                        if (!hasRedCard(m_attackFwdIdx)) break;
+                    }
                     m_dots[m_attackFwdIdx].targetPos = m_ballTarget;
                     m_dots[m_attackFwdIdx].speed = 100.f;
                 }

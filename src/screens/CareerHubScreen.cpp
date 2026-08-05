@@ -1,4 +1,5 @@
 #include "UITheme.h"
+#include "UIKit.h"
 #include "CareerHubScreen.h"
 #include "MatchScreen.h"
 #include "MenuScreen.h"
@@ -11,486 +12,378 @@
 #include "AssetManager.h"
 #include "MatchEngine.h"
 #include "MatchStatsScreen.h"
-#include "MatchEngine.h"
 #include "InterviewScreen.h"
 #include "EuropeanCupScreen.h"
 #include "SettingsScreen.h"
-#include "TransferScreen.h"
 #include "MyStatusScreen.h"
 #include "SquadScreen.h"
+#include <algorithm>
 
 CareerHubScreen::CareerHubScreen() {
 }
 
 void CareerHubScreen::init() {
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    m_titleText.setFont(font);
-    m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(sf::Color::White);
-    m_titleText.setPosition(50.f, 30.f);
-    
-    m_btnSettings.rect.setSize(sf::Vector2f(120.f, 40.f));
-    m_btnSettings.rect.setPosition(1100.f, 20.f);
-    m_btnSettings.baseColor = sf::Color(100, 100, 100);
-    m_btnSettings.rect.setFillColor(m_btnSettings.baseColor);
-    
-    m_btnSettings.text.setFont(font);
-    m_btnSettings.text.setString("Settings");
-    m_btnSettings.text.setCharacterSize(18);
-    m_btnSettings.text.setFillColor(sf::Color::White);
-    sf::FloatRect sr = m_btnSettings.text.getLocalBounds();
-    m_btnSettings.text.setOrigin(sr.left + sr.width/2.0f, sr.top + sr.height/2.0f);
-    m_btnSettings.text.setPosition(m_btnSettings.rect.getPosition().x + m_btnSettings.rect.getSize().x/2.0f,
-                                   m_btnSettings.rect.getPosition().y + m_btnSettings.rect.getSize().y/2.0f);
-    m_btnSettings.action = "Settings";
-    
-    m_playerStatsText.setFont(font);
-    m_playerStatsText.setCharacterSize(20);
-    m_playerStatsText.setFillColor(sf::Color(200, 200, 200));
-    m_playerStatsText.setPosition(50.f, 100.f);
+    m_buttons.clear();
+    m_hoverAction = m_pressedAction = "";
 
-    m_calendarText.setFont(font);
-    m_calendarText.setCharacterSize(24);
-    m_calendarText.setFillColor(sf::Color::Yellow);
-    m_calendarText.setPosition(400.f, 100.f);
-    
-    std::vector<std::string> buttonLabels = {"Advance Day", "My Status", "My Squad", "Upgrades", "League Table", "Tournaments", "Quit to Menu"};
-    float startY = 320.f;
-    
-    for (size_t i = 0; i < buttonLabels.size(); ++i) {
-        Button btn;
-        btn.rect.setSize(sf::Vector2f(300.f, 40.f));
-        btn.rect.setPosition(50.f, startY + i * 48.f);
-        btn.baseColor = UITheme::ButtonNormal;
-        
-        btn.text.setFont(font);
-        btn.text.setString(buttonLabels[i]);
-        btn.text.setCharacterSize(20);
-        btn.text.setFillColor(sf::Color::White);
-        
-        sf::FloatRect textRect = btn.text.getLocalBounds();
-        btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-        btn.text.setPosition(btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-                             btn.rect.getPosition().y + btn.rect.getSize().y/2.0f);
-        
-        btn.action = buttonLabels[i];
-        m_buttons.push_back(btn);
+    struct Def { std::string label, action; bool primary; };
+    std::vector<Def> defs = {
+        {"Advance Day",   "Advance Day",   true},
+        {"My Status",     "My Status",     false},
+        {"My Squad",      "My Squad",      false},
+        {"Upgrades",      "Upgrades",      false},
+        {"League Table",  "League Table",  false},
+        {"Tournaments",   "Tournaments",   false},
+        {"Settings",      "Settings",      false},
+        {"Quit to Menu",  "Quit to Menu",  false},
+    };
+    const float x = 560.f, w = 430.f, h = 48.f, gap = 54.f, y0 = 150.f;
+    for (size_t i = 0; i < defs.size(); ++i) {
+        Button b;
+        b.bounds = sf::FloatRect(x, y0 + i * gap, w, h);
+        b.label = defs[i].label; b.action = defs[i].action; b.primary = defs[i].primary;
+        m_buttons.push_back(b);
     }
-    
-    // DEBUG BUTTONS
-    Button debugMatch;
-    debugMatch.rect.setSize(sf::Vector2f(300.f, 50.f));
-    debugMatch.rect.setPosition(450.f, 350.f);
-    debugMatch.baseColor = sf::Color(150, 50, 50);
-    
-    debugMatch.text.setFont(font);
-    debugMatch.text.setString("Debug: Skip Match");
-    debugMatch.text.setCharacterSize(20);
-    debugMatch.text.setFillColor(sf::Color::White);
-    
-    sf::FloatRect tr1 = debugMatch.text.getLocalBounds();
-    debugMatch.text.setOrigin(tr1.left + tr1.width/2.0f, tr1.top + tr1.height/2.0f);
-    debugMatch.text.setPosition(debugMatch.rect.getPosition().x + debugMatch.rect.getSize().x/2.0f,
-                                debugMatch.rect.getPosition().y + debugMatch.rect.getSize().y/2.0f);
-    
-    debugMatch.action = "Debug: Skip Match";
-    m_buttons.push_back(debugMatch);
-    
-    Button debugTrain;
-    debugTrain.rect.setSize(sf::Vector2f(300.f, 50.f));
-    debugTrain.rect.setPosition(450.f, 410.f);
-    debugTrain.baseColor = sf::Color(150, 50, 50);
-    
-    debugTrain.text.setFont(font);
-    debugTrain.text.setString("Debug: Skip Training");
-    debugTrain.text.setCharacterSize(20);
-    debugTrain.text.setFillColor(sf::Color::White);
-    
-    sf::FloatRect tr2 = debugTrain.text.getLocalBounds();
-    debugTrain.text.setOrigin(tr2.left + tr2.width/2.0f, tr2.top + tr2.height/2.0f);
-    debugTrain.text.setPosition(debugTrain.rect.getPosition().x + debugTrain.rect.getSize().x/2.0f,
-                                debugTrain.rect.getPosition().y + debugTrain.rect.getSize().y/2.0f);
-    
-    debugTrain.action = "Debug: Skip Training";
-    m_buttons.push_back(debugTrain);
-    
-    Button debugSeason;
-    debugSeason.rect.setSize(sf::Vector2f(300.f, 50.f));
-    debugSeason.rect.setPosition(450.f, 470.f);
-    debugSeason.baseColor = sf::Color(150, 50, 50);
-    
-    debugSeason.text.setFont(font);
-    debugSeason.text.setString("Debug: Skip Season");
-    debugSeason.text.setCharacterSize(20);
-    debugSeason.text.setFillColor(sf::Color::White);
-    
-    sf::FloatRect tr3 = debugSeason.text.getLocalBounds();
-    debugSeason.text.setOrigin(tr3.left + tr3.width/2.0f, tr3.top + tr3.height/2.0f);
-    debugSeason.text.setPosition(debugSeason.rect.getPosition().x + debugSeason.rect.getSize().x/2.0f,
-                                 debugSeason.rect.getPosition().y + debugSeason.rect.getSize().y/2.0f);
-                                 
-    debugSeason.action = "Debug: Skip Season";
-    m_buttons.push_back(debugSeason);
+
+    // Transfer Center: shown only during a window (added visually in draw), fixed slot.
+    m_transfer.bounds = sf::FloatRect(x, y0 + defs.size() * gap, w, h);
+    m_transfer.label = "Transfer Center";
+    m_transfer.action = "Transfer Center";
+    m_transfer.primary = true;
+
+    // Debug shortcuts, a small row along the bottom.
+    struct Dbg { std::string label, action; };
+    std::vector<Dbg> dbg = {
+        {"Skip Match",  "Debug: Skip Match"},
+        {"Skip Train",  "Debug: Skip Training"},
+        {"Skip Season", "Debug: Skip Season"},
+    };
+    const float dx = 560.f, dw = 138.f, dgap = 8.f, dy = 648.f, dh = 32.f;
+    for (size_t i = 0; i < dbg.size(); ++i) {
+        Button b;
+        b.bounds = sf::FloatRect(dx + i * (dw + dgap), dy, dw, dh);
+        b.label = dbg[i].label; b.action = dbg[i].action;
+        m_buttons.push_back(b);
+    }
 }
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
+    auto actionAt = [&](sf::Vector2f m) -> std::string {
+        if (m_showTransfer && m_transfer.bounds.contains(m)) return m_transfer.action;
+        for (auto& b : m_buttons) if (b.bounds.contains(m)) return b.action;
+        return "";
+    };
+
+    if (event.type == sf::Event::MouseMoved) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseMove.x, event.mouseMove.y});
+        m_hoverAction = actionAt(m);
+    }
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        
-        if (m_btnSettings.rect.getGlobalBounds().contains(mousePos)) {
-            m_gameManager->changeScreen(std::make_shared<SettingsScreen>());
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        m_pressedAction = actionAt(m);
+    }
+    if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        std::string released = actionAt(m);
+        if (!released.empty() && released == m_pressedAction) dispatch(window, released);
+        m_pressedAction = "";
+    }
+}
+
+void CareerHubScreen::dispatch(sf::RenderWindow& window, const std::string& action) {
+    (void)window;
+    if (action == "Settings") {
+        m_gameManager->changeScreen(std::make_shared<SettingsScreen>()); return;
+    }
+    if (action == "Tournaments" || action == "European Cups") {
+        m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>()); return;
+    }
+    if (action == "Quit to Menu") {
+        m_gameManager->changeScreen(std::make_shared<MenuScreen>()); return;
+    }
+    if (action == "Transfer Center") {
+        m_gameManager->changeScreen(std::make_shared<TransferScreen>()); return;
+    }
+    if (action == "My Status") {
+        m_gameManager->changeScreen(std::make_shared<MyStatusScreen>()); return;
+    }
+    if (action == "My Squad") {
+        m_gameManager->changeScreen(std::make_shared<SquadScreen>()); return;
+    }
+    if (action == "Upgrades") {
+        m_gameManager->changeScreen(std::make_shared<UpgradeScreen>()); return;
+    }
+    if (action == "League Table") {
+        m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>()); return;
+    }
+    if (action == "Advance Day" || action == "Recovery") {
+        Player* p = m_gameManager->getPlayer();
+        CareerManager* cm = m_gameManager->getCareerManager();
+        if (p->injuredDays > 0) {
+            p->energy += 20; if (p->energy > 100) p->energy = 100;
+            cm->advanceDay(true);
             return;
         }
-        
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                if (btn.action == "Tournaments" || btn.action == "European Cups") {
-                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
-                } else if (btn.action == "European Cups") {
-                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
-                } else if (btn.action == "European Cups") {
-                    m_gameManager->changeScreen(std::make_shared<EuropeanCupScreen>());
-                } else if (btn.action == "Quit to Menu") {
-                    m_gameManager->changeScreen(std::make_shared<MenuScreen>());
-                } else if (btn.action == "Transfer Center") {
-                    m_gameManager->changeScreen(std::make_shared<TransferScreen>());
-                } else if (btn.action == "My Status") {
-                    m_gameManager->changeScreen(std::make_shared<MyStatusScreen>());
-                } else if (btn.action == "My Squad") {
-                    m_gameManager->changeScreen(std::make_shared<SquadScreen>());
-                } else if (btn.action == "Advance Day" || btn.action == "Recovery") {
-                    Player* p = m_gameManager->getPlayer();
-                    CareerManager* cm = m_gameManager->getCareerManager();
-                    
-                    if (p->injuredDays > 0) {
-                        // Injured, just rest and advance day
-                        p->energy += 20; // extra rest
-                        if (p->energy > 100) p->energy = 100;
-                        cm->advanceDay(true); // Simulate player club match!
-                        return; // exit loop
-                    }
+        if (cm->getDayType() == CalendarDayType::Rest && (rand() % 100 < 15)) {
+            m_gameManager->changeScreen(std::make_shared<EventScreen>()); return;
+        }
+        if (cm->isSummerBreak()) {
+            if (cm->hasInternationalMatchToday())
+                m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+            else cm->advanceDay();
+        } else if (cm->hasEuropeanMatchToday()) {
+            m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+        } else if (cm->getDayType() == CalendarDayType::Match) {
+            m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+        } else if (cm->getDayType() == CalendarDayType::Training) {
+            m_gameManager->changeScreen(std::make_shared<TrainingScreen>());
+        } else {
+            cm->advanceDay();
+        }
+        return;
+    }
+    if (action == "Skip Summer") {
+        CareerManager* cm = m_gameManager->getCareerManager();
+        while (cm->isSummerBreak()) cm->advanceDay();
+        return;
+    }
+    if (action == "Debug: Skip Training") {
+        if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Training) {
+            m_gameManager->getPlayer()->experience += 8;
+            m_gameManager->getCareerManager()->advanceDay();
+        }
+        return;
+    }
+    if (action == "Debug: Skip Season") {
+        m_gameManager->getCareerManager()->skipSeason();
+        return;
+    }
+    if (action == "Debug: Skip Match") {
+        CareerManager* cm = m_gameManager->getCareerManager();
+        if (!(cm->getDayType() == CalendarDayType::Match || cm->hasInternationalMatchToday())) return;
+        Player* p = m_gameManager->getPlayer();
+        if (p->suspensionMatches > 0) p->suspensionMatches--;
+        Club* opp = nullptr;
+        Club* playerClub = p->currentClub;
+        bool isHomeMatch = true;
 
-                    // 15% chance of random event ONLY on Rest days
-                    if (cm->getDayType() == CalendarDayType::Rest && (rand() % 100 < 15)) {
-                        m_gameManager->changeScreen(std::make_shared<EventScreen>());
-                        return;
-                    }
-
-                    if (cm->isSummerBreak()) {
-                        if (cm->hasInternationalMatchToday()) {
-                            m_gameManager->changeScreen(std::make_shared<MatchScreen>());
-                        } else {
-                            cm->advanceDay();
-                        }
-                    } else if (cm->hasEuropeanMatchToday()) {
-                        m_gameManager->changeScreen(std::make_shared<MatchScreen>());
-                    } else if (cm->getDayType() == CalendarDayType::Match) {
-                        m_gameManager->changeScreen(std::make_shared<MatchScreen>());
-                    } else if (cm->getDayType() == CalendarDayType::Training) {
-                        m_gameManager->changeScreen(std::make_shared<TrainingScreen>());
-                    } else {
-                        // Rest
-                        cm->advanceDay();
-                    }
-                } else if (btn.action == "Skip Summer") {
-                    CareerManager* cm = m_gameManager->getCareerManager();
-                    while (cm->isSummerBreak()) {
-                        cm->advanceDay();
-                    }
-                } else if (btn.action == "Upgrades") {
-                    m_gameManager->changeScreen(std::make_shared<UpgradeScreen>());
-                } else if (btn.action == "League Table") {
-                    m_gameManager->changeScreen(std::make_shared<LeagueTableScreen>());
-                } else if (btn.action == "Debug: Skip Match") {
-                    if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Match || m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
-                        Player* p = m_gameManager->getPlayer();
-                        if (p->suspensionMatches > 0) p->suspensionMatches--;
-                        Club* opp = nullptr;
-                        Club* playerClub = p->currentClub;
-                        bool isHomeMatch = true;
-                        
-                        if (m_gameManager->getCareerManager()->hasInternationalMatchToday()) {
-                            opp = m_gameManager->getCareerManager()->getInternationalOpponent();
-                            isHomeMatch = m_gameManager->getCareerManager()->isHomeInternationalMatch();
-                            // Player's national team plays, so we pass nationality as club name.
-                            // We will handle this nicely by passing a dummy club or finding the national team.
-                            const League* nats = m_gameManager->getDatabase().getNationalTeams();
-                            if (nats) {
-                                for (auto& c : nats->clubs) {
-                                    if (c.name == p->nationality) playerClub = const_cast<Club*>(&c);
-                                }
-                            }
-                        } else if (m_gameManager->getCareerManager()->hasEuropeanMatchToday()) {
-                            opp = m_gameManager->getCareerManager()->getTodayOpponent();
-                            isHomeMatch = m_gameManager->getCareerManager()->isHomeMatchToday();
-                        } else {
-                            const League* lg = nullptr;
-                            for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
-                                for (const auto& c : l.clubs) {
-                                    if (c.name == p->currentClub->name) {
-                                        lg = &l;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            if (lg) {
-                                int n = static_cast<int>(lg->clubs.size());
-                                int r = p->weeksPlayed % (n - 1);
-                                
-                                int pIndex = -1;
-                                for (int i = 0; i < n; ++i) {
-                                    if (lg->clubs[i].name == p->currentClub->name) {
-                                        pIndex = i;
-                                        break;
-                                    }
-                                }
-                                
-                                auto rotate = [n, r](int x) {
-                                    if (x == 0) return 0;
-                                    return 1 + (x - 1 + r) % (n - 1);
-                                };
-                                
-                                for (int i = 0; i < n / 2; ++i) {
-                                    int t1 = (i == 0) ? 0 : rotate(i);
-                                    int t2 = rotate(n - 1 - i);
-                                    
-                                    if (t1 == pIndex) {
-                                        opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name);
-                                        break;
-                                    } else if (t2 == pIndex) {
-                                        opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name);
-                                        isHomeMatch = false;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        std::shared_ptr<MatchEngine> engine = std::make_shared<MatchEngine>(playerClub, opp, isHomeMatch, p);
-                        
-                        while (engine->getState() != MatchState::Finished) {
-                            if (engine->getState() == MatchState::Simulating) {
-                                engine->updateMinute();
-                            } else if (engine->getState() == MatchState::MinigameTriggered) {
-                                // 50% win rate for auto-sim, with randomized power/accuracy
-                                MinigameResult autoResult;
-                                autoResult.success = rand() % 2 == 0;
-                                autoResult.kind = MinigameActionKind::Shot;
-                                autoResult.power = (rand() % 100) / 100.f;
-                                autoResult.accuracy = (rand() % 100) / 100.f;
-                                engine->processMinigameResult(autoResult);
-                            }
-                            
-                            while (engine->hasLogs()) {
-                                engine->commitEvent(engine->popRecentLog());
-                            }
-                        }
-                        m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(engine));
-                    }
-                } else if (btn.action == "Debug: Skip Training") {
-                    if (m_gameManager->getCareerManager()->getDayType() == CalendarDayType::Training) {
-                        Player* p = m_gameManager->getPlayer();
-                        // Going through the motions: less than even a sloppy drill (5-30),
-                        // so skipping is never the optimal way to train. It used to pay 50,
-                        // i.e. more than a PERFECT session, which made playing them pointless.
-                        p->experience += 8;
-                        m_gameManager->getCareerManager()->advanceDay();
-                    }
-                } else if (btn.action == "Debug: Skip Season") {
-                    m_gameManager->getCareerManager()->skipSeason();
+        if (cm->hasInternationalMatchToday()) {
+            opp = cm->getInternationalOpponent();
+            isHomeMatch = cm->isHomeInternationalMatch();
+            const League* nats = m_gameManager->getDatabase().getNationalTeams();
+            if (nats)
+                for (auto& c : nats->clubs)
+                    if (c.name == p->nationality) playerClub = const_cast<Club*>(&c);
+        } else if (cm->hasEuropeanMatchToday()) {
+            opp = cm->getTodayOpponent();
+            isHomeMatch = cm->isHomeMatchToday();
+        } else {
+            const League* lg = nullptr;
+            for (const auto& l : m_gameManager->getDatabase().getLeagues())
+                for (const auto& c : l.clubs)
+                    if (c.name == p->currentClub->name) { lg = &l; break; }
+            if (lg) {
+                int n = (int)lg->clubs.size();
+                int r = p->weeksPlayed % (n - 1);
+                int pIndex = -1;
+                for (int i = 0; i < n; ++i)
+                    if (lg->clubs[i].name == p->currentClub->name) { pIndex = i; break; }
+                auto rotate = [n, r](int x) { return x == 0 ? 0 : 1 + (x - 1 + r) % (n - 1); };
+                for (int i = 0; i < n / 2; ++i) {
+                    int t1 = (i == 0) ? 0 : rotate(i);
+                    int t2 = rotate(n - 1 - i);
+                    if (t1 == pIndex) { opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t2].name); break; }
+                    else if (t2 == pIndex) { opp = m_gameManager->getDatabase().getClub(lg->name, lg->clubs[t1].name); isHomeMatch = false; break; }
                 }
             }
         }
-    }
-    
-    if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        for (auto& btn : m_buttons) {
-            btn.isHovered = btn.rect.getGlobalBounds().contains(mousePos);
+
+        std::shared_ptr<MatchEngine> engine = std::make_shared<MatchEngine>(playerClub, opp, isHomeMatch, p);
+        int skipGuard = 0;
+        while (engine->getState() != MatchState::Finished && ++skipGuard < 100000) {
+            if (engine->getState() == MatchState::Simulating) engine->updateMinute();
+            else if (engine->getState() == MatchState::MinigameTriggered) {
+                MinigameResult a; a.success = rand() % 2 == 0; a.kind = MinigameActionKind::Shot;
+                a.power = (rand() % 100) / 100.f; a.accuracy = (rand() % 100) / 100.f;
+                engine->processMinigameResult(a);
+            }
+            while (engine->hasLogs()) {
+                MatchEvent ev = engine->popRecentLog();
+                if (ev.type == EventType::PendingMinigame) {
+                    bool attacking = (ev.isHome == engine->isHome());
+                    MinigameResult r; r.success = (rand() % 100) < 50;
+                    r.power = (rand() % 100) / 100.f; r.accuracy = (rand() % 100) / 100.f;
+                    if (attacking)
+                        r.kind = (p->position == PlayerPosition::Forward) ? MinigameActionKind::Shot
+                               : ((rand() % 2 == 0) ? MinigameActionKind::Shot : MinigameActionKind::Pass);
+                    else
+                        r.kind = (p->position == PlayerPosition::Goalkeeper) ? MinigameActionKind::Save
+                                                                             : MinigameActionKind::Tackle;
+                    engine->processMinigameResult(r);
+                } else engine->commitEvent(ev);
+            }
         }
+        m_gameManager->changeScreen(std::make_shared<MatchStatsScreen>(engine));
+        return;
     }
 }
 
 void CareerHubScreen::update(sf::Time deltaTime) {
+    (void)deltaTime;
     Player* p = m_gameManager->getPlayer();
     CareerManager* cm = m_gameManager->getCareerManager();
-    
+
     if (p && cm && p->weeksPlayed >= cm->getSeasonLength()) {
         m_gameManager->changeScreen(std::make_shared<InterviewScreen>());
         return;
     }
-    
-    if (p && p->currentClub) {
-        std::string titleStr = p->currentClub->name + " - Hub";
-        m_titleText.setString(sf::String::fromUtf8(titleStr.begin(), titleStr.end()));
-        
-        std::string posStr = "Unknown";
-        if (p->position == PlayerPosition::Forward) posStr = "Forward";
-        else if (p->position == PlayerPosition::Midfielder) posStr = "Midfielder";
-        else if (p->position == PlayerPosition::Defender) posStr = "Defender";
-        else if (p->position == PlayerPosition::Goalkeeper) posStr = "Goalkeeper";
-        
-        std::string stats = "Name: " + p->name + "\n";
-        stats += "Nationality: " + p->nationality + "\n";
-        stats += "Position: " + posStr + "\n";
-        stats += "Overall: " + std::to_string(p->overall()) + "   Rating (" + posStr.substr(0, 3) + "): "
-               + std::to_string(p->positionalRating()) + "   Potential: " + std::to_string(p->potential) + "\n";
-        // Only the attributes his position uses - the rest aren't trainable and aren't his job.
-        std::string attrs;
-        if (p->usesShooting())    attrs += "Shooting: " + std::to_string(p->shooting) + "   ";
-        if (p->usesPassing())     attrs += "Passing: " + std::to_string(p->passing) + "   ";
-        if (p->usesTackling())    attrs += "Tackling: " + std::to_string(p->tackling) + "   ";
-        if (p->usesDribbling())   attrs += "Dribbling: " + std::to_string(p->dribbling) + "   ";
-        if (p->usesGoalkeeping()) attrs += "Goalkeeping: " + std::to_string(p->goalkeeping) + "   ";
-        stats += attrs + "\n";
-        stats += "Morale: " + std::to_string(p->morale) + "\n";
-        stats += "Energy: " + std::to_string(p->energy) + "%\n";
-        stats += "XP: " + std::to_string(p->experience) + "\n";
-        stats += "Money: $" + std::to_string(p->money) + "\n";
-        stats += "Salary: $" + std::to_string(p->salary) + "/w\n";
-        m_playerStatsText.setString(UITheme::u8(stats)); // stats include the (possibly Cyrillic) name
-        
-        if (cm && cm->isSummerBreak()) {
-            if (cm->hasInternationalMatchToday()) {
-                m_buttons[0].text.setString("Play Int. Match");
-                m_buttons[0].action = "Advance Day";
-                m_buttons[0].baseColor = sf::Color(50, 150, 50);
-            } else if (!cm->hasRemainingInternationalMatches()) {
-                m_buttons[0].text.setString("Proceed to Club Season");
-                m_buttons[0].action = "Skip Summer";
-                m_buttons[0].baseColor = sf::Color(100, 100, 150);
-            } else {
-                m_buttons[0].text.setString("Simulate Day");
-                m_buttons[0].action = "Advance Day";
-                m_buttons[0].baseColor = UITheme::ButtonNormal;
-            }
-        } else if (p->injuredDays > 0) {
-            m_buttons[0].text.setString("Recovery (Rest)");
-            m_buttons[0].action = "Recovery";
-            m_buttons[0].baseColor = sf::Color(150, 50, 50);
-        } else {
-            m_buttons[0].text.setString("Advance Day");
-            m_buttons[0].action = "Advance Day";
-            m_buttons[0].baseColor = UITheme::ButtonNormal;
-        }
+    if (!p || !p->currentClub || !cm) return;
 
-        // Handle Transfer Window
-        int currentDay = cm->getCurrentDay();
-        // Middle of season (January: day 154-184) or End of season (Summer break)
-        bool isTransferWindow = cm->isSummerBreak() || (currentDay >= 154 && currentDay <= 184);
-        
-        if (isTransferWindow && p->weeksPlayed > 0) {
-            bool hasTransferBtn = false;
-            for (auto& b : m_buttons) if (b.action == "Transfer Center") hasTransferBtn = true;
-            
-            if (!hasTransferBtn) {
-                Button btnOff;
-                btnOff.rect.setSize(sf::Vector2f(200.f, 40.f));
-                btnOff.rect.setPosition(450.f, 300.f);
-                btnOff.baseColor = sf::Color(200, 150, 50);
-                
-                auto& font = AssetManager::get().getFont("MainFont");
-                btnOff.text.setFont(font);
-                btnOff.text.setString("Transfer Center");
-                btnOff.text.setCharacterSize(18);
-                btnOff.text.setFillColor(sf::Color::Black);
-                sf::FloatRect tr = btnOff.text.getLocalBounds();
-                btnOff.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
-                btnOff.text.setPosition(btnOff.rect.getPosition().x + btnOff.rect.getSize().x/2.0f,
-                                        btnOff.rect.getPosition().y + btnOff.rect.getSize().y/2.0f);
-                btnOff.action = "Transfer Center";
-                m_buttons.push_back(btnOff);
-            }
+    m_clubTitle = p->currentClub->name + " - Hub";
+
+    // Dynamic first button.
+    if (cm->isSummerBreak()) {
+        if (cm->hasInternationalMatchToday()) {
+            m_buttons[0].label = "Play Int. Match"; m_buttons[0].action = "Advance Day"; m_buttons[0].primary = true;
+        } else if (!cm->hasRemainingInternationalMatches()) {
+            m_buttons[0].label = "Proceed to Club Season"; m_buttons[0].action = "Skip Summer"; m_buttons[0].primary = true;
         } else {
-            // Remove transfer button if window is closed
-            m_buttons.erase(std::remove_if(m_buttons.begin(), m_buttons.end(), [](const Button& b) {
-                return b.action == "Transfer Center";
-            }), m_buttons.end());
+            m_buttons[0].label = "Simulate Day"; m_buttons[0].action = "Advance Day"; m_buttons[0].primary = true;
         }
+    } else if (p->injuredDays > 0) {
+        m_buttons[0].label = "Recovery (Rest)"; m_buttons[0].action = "Recovery"; m_buttons[0].primary = true;
+    } else {
+        m_buttons[0].label = "Advance Day"; m_buttons[0].action = "Advance Day"; m_buttons[0].primary = true;
     }
-    
-    if (cm) {
-        int currentDay = cm->getCurrentDay();
-        int currentYear = cm->getYear();
-        int totalDaysOffset = currentDay - 1;
-        
-        if (cm->isSummerBreak()) {
-            totalDaysOffset = 304 + cm->getSummerDay() - 1; 
-        }
-        
-        int daysInMonth[] = {31, 30, 31, 30, 31, 31, 28, 31, 30, 31, 30, 31};
-        std::string monthNames[] = {"August", "September", "October", "November", "December", "January", "February", "March", "April", "May", "June", "July"};
-        
-        int monthIndex = 0;
-        while (totalDaysOffset >= daysInMonth[monthIndex]) {
-            totalDaysOffset -= daysInMonth[monthIndex];
-            monthIndex++;
-            if (monthIndex >= 12) {
-                monthIndex = 11;
-                totalDaysOffset = daysInMonth[11] - 1;
-            }
-        }
-        
-        int displayYear;
-        if (cm->isSummerBreak()) {
-            displayYear = currentYear;
-        } else {
-            if (monthIndex >= 5) {
-                displayYear = currentYear + 1;
-            } else {
-                displayYear = currentYear;
-            }
-        }
-        
-        std::string dateStr = monthNames[monthIndex] + " " + std::to_string(totalDaysOffset + 1) + ", " + std::to_string(displayYear);
 
-        int currentDayVal = cm->getCurrentDay();
-        bool isTransferWindow = cm->isSummerBreak() || (currentDayVal >= 154 && currentDayVal <= 184);
+    // Transfer window visibility.
+    int currentDay = cm->getCurrentDay();
+    bool isTransferWindow = cm->isSummerBreak() || (currentDay >= 154 && currentDay <= 184);
+    m_showTransfer = (isTransferWindow && p->weeksPlayed > 0);
 
-        if (cm->isSummerBreak()) {
-            std::string cal = "SUMMER BREAK - " + dateStr + "\n";
-            cal += p->isCalledUp ? "You have been called up\nfor National Team!" : "You are resting\nthis summer.";
-            if (isTransferWindow) {
-                cal += "\nTRANSFER WINDOW OPEN!";
-            }
-            m_calendarText.setFillColor(sf::Color(255, 165, 0)); // Orange
-            m_calendarText.setString(cal);
-        } else {
-            std::string cal = dateStr + " (Week " + std::to_string(p ? p->weeksPlayed : 0) + ")\n";
-            cal += "Schedule: " + cm->getDayTypeString() + "\n";
-            if (p && isTransferWindow && p->weeksPlayed > 0) {
-                cal += "\nTRANSFER WINDOW OPEN!";
-            }
-            if (p && p->injuredDays > 0) {
-                cal += "\nINJURED: " + std::to_string(p->injuredDays) + " days left";
-                m_calendarText.setFillColor(sf::Color::Red);
-            } else if (p && isTransferWindow && p->weeksPlayed > 0) {
-                m_calendarText.setFillColor(sf::Color::Yellow);
-            } else {
-                m_calendarText.setFillColor(sf::Color::Yellow);
-            }
-            m_calendarText.setString(cal);
+    // Date / schedule header lines.
+    int currentYear = cm->getYear();
+    int totalDaysOffset = currentDay - 1;
+    if (cm->isSummerBreak()) totalDaysOffset = 304 + cm->getSummerDay() - 1;
+    int daysInMonth[] = {31, 30, 31, 30, 31, 31, 28, 31, 30, 31, 30, 31};
+    std::string monthNames[] = {"August", "September", "October", "November", "December", "January",
+                                "February", "March", "April", "May", "June", "July"};
+    int monthIndex = 0;
+    while (totalDaysOffset >= daysInMonth[monthIndex]) {
+        totalDaysOffset -= daysInMonth[monthIndex];
+        if (++monthIndex >= 12) { monthIndex = 11; totalDaysOffset = daysInMonth[11] - 1; }
+    }
+    int displayYear = cm->isSummerBreak() ? currentYear : (monthIndex >= 5 ? currentYear + 1 : currentYear);
+    std::string dateStr = monthNames[monthIndex] + " " + std::to_string(totalDaysOffset + 1) + ", " + std::to_string(displayYear);
+
+    m_notice = "";
+    if (cm->isSummerBreak()) {
+        m_line1 = "SUMMER BREAK  -  " + dateStr;
+        m_line2 = p->isCalledUp ? "Called up for the National Team" : "Resting this summer";
+        m_noticeColor = sf::Color(255, 165, 0);
+        if (isTransferWindow) m_notice = "TRANSFER WINDOW OPEN";
+    } else {
+        m_line1 = dateStr + "   -   Week " + std::to_string(p->weeksPlayed);
+        m_line2 = "Schedule: " + cm->getDayTypeString();
+        if (p->injuredDays > 0) {
+            m_notice = "INJURED - " + std::to_string(p->injuredDays) + " days left";
+            m_noticeColor = sf::Color(230, 80, 80);
+        } else if (isTransferWindow && p->weeksPlayed > 0) {
+            m_notice = "TRANSFER WINDOW OPEN";
+            m_noticeColor = UITheme::Highlight;
         }
     }
 }
 
 void CareerHubScreen::draw(sf::RenderWindow& window) {
-    UITheme::drawGradientBackground(window);
-    window.draw(m_titleText);
-    window.draw(m_playerStatsText);
-    window.draw(m_calendarText);
-    
-    for (const auto& btn : m_buttons) {
-        sf::RectangleShape renderRect = btn.rect;
-        renderRect.setFillColor(btn.isHovered ? sf::Color(std::min(255, btn.baseColor.r + 50), std::min(255, btn.baseColor.g + 50), std::min(255, btn.baseColor.b + 50)) : btn.baseColor);
-        window.draw(renderRect);
-        window.draw(btn.text);
+    auto& font = AssetManager::get().getFont("MainFont");
+    Player* p = m_gameManager->getPlayer();
+
+    UIKit::drawBackground(window);
+
+    // Club crest next to the title. The box is centred on the title's vertical mid-line so the
+    // two line up regardless of the crest's own aspect ratio.
+    const float titleY = 40.f, titleSize = 32.f;
+    float titleX = 40.f;
+    if (p && p->currentClub) {
+        sf::Texture& logo = AssetManager::get().getTexture(p->currentClub->name, false);
+        sf::Vector2u ts = logo.getSize();
+        float box = 60.f;
+        float boxX = 34.f, boxY = titleY + titleSize * 0.5f - box * 0.5f; // vertically centred on title
+        float sc = (ts.x > 0 && ts.y > 0) ? box / (float)std::max(ts.x, ts.y) : 1.f;
+        sf::Sprite crest(logo);
+        crest.setScale(sc, sc);
+        crest.setPosition(boxX + (box - ts.x * sc) * 0.5f, boxY + (box - ts.y * sc) * 0.5f);
+        window.draw(crest);
+        titleX = boxX + box + 24.f;
     }
-    
-    sf::RectangleShape settingsRenderRect = m_btnSettings.rect;
-    settingsRenderRect.setFillColor(m_btnSettings.isHovered ? sf::Color(std::min(255, m_btnSettings.baseColor.r + 50), std::min(255, m_btnSettings.baseColor.g + 50), std::min(255, m_btnSettings.baseColor.b + 50)) : m_btnSettings.baseColor);
-    window.draw(settingsRenderRect);
-    window.draw(m_btnSettings.text);
+    UIKit::drawTitle(window, font, {titleX, titleY}, m_clubTitle.empty() ? "Career Hub" : m_clubTitle, (unsigned)titleSize);
+
+    // Date / schedule header.
+    UIKit::drawText(window, font, {560.f, 96.f}, m_line1, 17, UITheme::TextWhite, 1.0f, true);
+    UIKit::drawText(window, font, {560.f, 120.f}, m_line2, 15, UITheme::TextDim, 1.0f);
+    if (!m_notice.empty())
+        UIKit::drawText(window, font, {880.f, 120.f}, m_notice, 15, m_noticeColor, 1.2f, true);
+
+    auto stateOf = [&](const std::string& action) {
+        if (action == m_pressedAction && action == m_hoverAction) return UIKit::BtnState::Pressed;
+        if (action == m_hoverAction) return UIKit::BtnState::Hover;
+        return UIKit::BtnState::Normal;
+    };
+
+    // Player panel (left).
+    UIKit::drawPanel(window, {50.f, 140.f, 470.f, 520.f});
+    if (p) {
+        float px = 74.f, py = 158.f;
+        // Flag + name.
+        if (!p->nationality.empty()) {
+            sf::Texture& tex = AssetManager::get().getTexture(p->nationality, true);
+            sf::Vector2u ts = tex.getSize();
+            float fh = 34.f, fw = (ts.y > 0) ? fh * (float)ts.x / (float)ts.y : 50.f;
+            sf::RectangleShape frame({fw + 2.f, fh + 2.f});
+            frame.setPosition(px - 1.f, py - 1.f); frame.setFillColor(sf::Color(0, 0, 0, 120));
+            window.draw(frame);
+            sf::Sprite flag(tex);
+            flag.setScale(fw / std::max(1u, ts.x), fh / std::max(1u, ts.y));
+            flag.setPosition(px, py);
+            window.draw(flag);
+        }
+        UIKit::drawText(window, font, {px + 62.f, py - 2.f}, p->name, 26, UITheme::TextWhite, 1.0f, true);
+
+        std::string posStr = "Unknown";
+        if (p->position == PlayerPosition::Forward) posStr = "Forward";
+        else if (p->position == PlayerPosition::Midfielder) posStr = "Midfielder";
+        else if (p->position == PlayerPosition::Defender) posStr = "Defender";
+        else if (p->position == PlayerPosition::Goalkeeper) posStr = "Goalkeeper";
+        UIKit::drawText(window, font, {px + 62.f, py + 30.f}, posStr + "  ·  " + p->nationality, 15, UITheme::Accent, 1.0f);
+
+        float y = 226.f;
+        auto row = [&](const std::string& icon, sf::Color ic, const std::string& s,
+                       sf::Color tc = UITheme::TextWhite, unsigned sz = 18) {
+            UIKit::drawIcon(window, icon, {82.f, y + sz * 0.55f}, 8.5f, ic);
+            UIKit::drawText(window, font, {104.f, y}, s, sz, tc, 1.0f);
+            y += (float)sz + 11.f;
+        };
+        row("star", UITheme::Highlight,
+            "Overall " + std::to_string(p->overall()) + "    Rating " + std::to_string(p->positionalRating())
+            + "    Potential " + std::to_string(p->potential), UITheme::TextWhite);
+        y += 6.f;
+        if (p->usesShooting())    row("target", UITheme::Accent, "Shooting     " + std::to_string(p->shooting), UITheme::TextDim);
+        if (p->usesPassing())     row("arrow",  UITheme::Accent, "Passing      " + std::to_string(p->passing), UITheme::TextDim);
+        if (p->usesTackling())    row("shield", UITheme::Accent, "Tackling     " + std::to_string(p->tackling), UITheme::TextDim);
+        if (p->usesDribbling())   row("weave",  UITheme::Accent, "Dribbling    " + std::to_string(p->dribbling), UITheme::TextDim);
+        if (p->usesGoalkeeping()) row("glove",  UITheme::Accent, "Goalkeeping  " + std::to_string(p->goalkeeping), UITheme::TextDim);
+        y += 8.f;
+        row("smiley", UITheme::Accent,    "Morale   " + std::to_string(p->morale) + "%");
+        row("bolt",   UITheme::Accent,    "Energy   " + std::to_string(p->energy) + "%");
+        row("chart",  UITheme::Accent,    "XP   " + std::to_string(p->experience));
+        row("coin",   UITheme::Highlight, "Money   $" + std::to_string(p->money));
+        row("coin",   UITheme::Highlight, "Salary   $" + std::to_string(p->salary) + "/w");
+    }
+
+    // Action buttons.
+    for (const auto& b : m_buttons)
+        UIKit::drawButton(window, font, b.bounds, b.label, stateOf(b.action));
+    if (m_showTransfer)
+        UIKit::drawButton(window, font, m_transfer.bounds, m_transfer.label, stateOf(m_transfer.action));
 }

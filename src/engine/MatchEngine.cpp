@@ -1,5 +1,6 @@
 #include "MatchEngine.h"
 #include "Player.h"
+#include "Settings.h"
 #include <cstdlib>
 #include <string>
 
@@ -44,7 +45,8 @@ MatchEngine::MatchEngine(Club* playerClub, Club* opponentClub, bool isHome, Play
             userIsPlaying = false; m_userStartReason = "Status: BENCHED (Low Trust)";
         } else if (m_player->energy < 50.0f) {
             userIsPlaying = false; m_userStartReason = "Status: LEFT OUT (Too Tired)";
-        } else if (playerStr < clubStr - 25) {
+        } else if (playerStr < clubStr - 25 + (g_settings.difficulty - 1) * 10) {
+            // Easy is more forgiving about the gap to the club's level (-35), Hard stricter (-15).
             userIsPlaying = false; m_userStartReason = "Status: BENCHED (Stats too low)";
         }
     } else {
@@ -215,7 +217,13 @@ void MatchEngine::updateMinute() {
     
     int playerTeamChance = 12 + (pStrength - oStrength) / 6;
     int oppTeamChance = 12 + (oStrength - pStrength) / 6;
-    
+
+    // Difficulty tilts the run of play: Hard gives the opponent more chances, Easy tilts them
+    // your way. Modest (a few percent of minutes) so it nudges the match, not swings it.
+    int diffBias = (g_settings.difficulty - 1) * 3; // Easy -3, Normal 0, Hard +3
+    oppTeamChance += diffBias;
+    playerTeamChance -= diffBias;
+
     if (playerTeamChance < 2) playerTeamChance = 2;
     if (oppTeamChance < 2) oppTeamChance = 2;
     
@@ -282,7 +290,14 @@ void MatchEngine::updateMinute() {
 }
 
 void MatchEngine::simulateAIEvent(bool playerTeamAttacking) {
-    if (rand() % 100 < 15) {
+    // Conversion scales with difficulty: Hard makes the OPPONENT more clinical and your AI
+    // team-mates less so; Easy the reverse. Your own interactive chances are decided by your
+    // timing, not here - difficulty only shapes the AI-simmed play.
+    int goalPct = playerTeamAttacking ? (15 - (g_settings.difficulty - 1) * 4)
+                                      : (15 + (g_settings.difficulty - 1) * 5);
+    if (goalPct < 5) goalPct = 5;
+    if (goalPct > 30) goalPct = 30;
+    if (rand() % 100 < goalPct) {
         if (playerTeamAttacking) {
             addLog("GOAL! " + m_playerClub->name + " scores a brilliant team goal!", EventType::Goal, m_isHome, EventOutcome::Goal);
         } else {

@@ -67,14 +67,15 @@ namespace PitchRenderer {
         window.draw(ball);
     }
 
-    // The drawn shot/pass path (the yellow trace).
+    // The drawn shot/pass path (a coloured trace). Default is the yellow shot colour; the
+    // match passes cyan for a pass and a dimmer alpha once the ball is in flight.
     inline void drawPath(sf::RenderWindow& window, const std::vector<sf::Vector2f>& path,
-                         sf::Uint8 alpha = 210) {
+                         sf::Color color = sf::Color(255, 230, 90, 210)) {
         if (path.size() < 2) return;
         sf::VertexArray line(sf::LineStrip, path.size());
         for (std::size_t s = 0; s < path.size(); ++s) {
             line[s].position = path[s];
-            line[s].color = sf::Color(255, 230, 90, alpha);
+            line[s].color = color;
         }
         window.draw(line);
     }

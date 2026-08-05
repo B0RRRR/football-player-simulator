@@ -267,13 +267,8 @@ private:
     std::vector<MatchEvent> m_visibleLogs;
     std::vector<sf::RectangleShape> m_momentumBars;
     
-    // 2D Pitch Elements
-    sf::RectangleShape m_pitchRect;
-    sf::RectangleShape m_pitchLines;
-    sf::CircleShape m_pitchCenter;
-    sf::RectangleShape m_leftGoal;
-    sf::RectangleShape m_rightGoal;
-    
+    // 2D Pitch Elements. The pitch geometry itself is drawn by PitchRenderer (shared with the
+    // training drills); only the moving pieces (dots, ball) are held here as position state.
     std::vector<PlayerDot> m_dots;
     sf::CircleShape m_visualBall;
     sf::Vector2f m_ballTarget;

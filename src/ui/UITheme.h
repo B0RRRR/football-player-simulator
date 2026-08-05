@@ -35,6 +35,14 @@ namespace UITheme {
     const sf::Color TextDim(180, 190, 210);
     const sf::Color Highlight(255, 215, 0); // Gold for active/selection
 
+    // Broadcast accent (the bright "TV graphics" colour) used by UIKit for accent bars,
+    // hover states and title marks. Cyan reads as sporty/technical against the navy base.
+    const sf::Color Accent(0, 190, 255);
+    const sf::Color AccentDim(0, 110, 165);
+    const sf::Color PanelDark(28, 38, 62);      // button/panel base
+    const sf::Color PanelHover(48, 68, 108);    // hovered panel
+    const sf::Color PanelPressed(20, 28, 46);   // pressed panel
+
     // Draw a vertical gradient background filling the window
     inline void drawGradientBackground(sf::RenderWindow& window) {
         sf::VertexArray bg(sf::Quads, 4);

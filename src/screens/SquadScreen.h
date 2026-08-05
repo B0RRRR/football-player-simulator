@@ -1,8 +1,9 @@
 #pragma once
 #include "Screen.h"
 #include <SFML/Graphics.hpp>
-#include "UITheme.h"
-#include "Database.h"
+#include "Player.h"
+#include <string>
+#include <vector>
 
 class GameManager;
 
@@ -15,35 +16,18 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Font m_font;
-    sf::Text m_titleText;
-    
-    struct PlayerRow {
-        sf::Text name;
-        sf::Text pos;
-        sf::Text nat;
-        sf::Text ovr;
-        sf::Text goals;
-        sf::Text assists;
-        sf::RectangleShape bg;
+    struct Row {
+        std::string name, nat;
+        PlayerPosition pos;
+        int ovr, goals, assists;
+        bool isMe;
     };
-    
-    std::vector<PlayerRow> m_rows;
-    
-    // UI
-    sf::RectangleShape m_btnBack;
-    sf::Text m_btnBackText;
-    bool m_btnBackHovered = false;
-    
-    sf::Text m_headerName;
-    sf::Text m_headerPos;
-    sf::Text m_headerNat;
-    sf::Text m_headerOvr;
-    sf::Text m_headerGoals;
-    sf::Text m_headerAssists;
-    
-    float m_scrollOffset = 0.f;
-    float m_maxScroll = 0.f;
-    float m_rowHeight = 40.f;
-    float m_startY = 150.f;
+    std::vector<Row> m_rows;
+    std::string m_title;
+
+    sf::FloatRect m_backBtn;
+    bool m_backHover = false, m_backPressed = false;
+
+    float m_scroll = 0.f, m_maxScroll = 0.f;
+    const float m_rowH = 46.f, m_bandTop = 210.f, m_bandBot = 596.f;
 };

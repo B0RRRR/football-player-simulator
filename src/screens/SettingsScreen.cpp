@@ -4,6 +4,7 @@
 #include "AssetManager.h"
 #include "Settings.h"
 #include "UITheme.h"
+#include "UIKit.h"
 #include "CareerHubScreen.h"
 #include "SaveManager.h"
 #include <memory>
@@ -13,116 +14,128 @@ SettingsScreen::SettingsScreen() {
 }
 
 void SettingsScreen::init() {
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    m_titleText.setFont(font);
-    m_titleText.setString("Settings");
-    m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(UITheme::TextWhite);
-    m_titleText.setPosition(400.f, 50.f);
-    
-    m_diffText.setFont(font);
-    m_diffText.setCharacterSize(24);
-    m_diffText.setFillColor(UITheme::Highlight);
-    m_diffText.setPosition(250.f, 150.f);
-    updateDifficultyText();
-    
-    m_speedText.setFont(font);
-    m_speedText.setCharacterSize(24);
-    m_speedText.setFillColor(UITheme::Highlight);
-    m_speedText.setPosition(250.f, 250.f);
-    updateSpeedText();
-    
-    // Setup buttons
-    std::vector<std::string> buttonLabels = {"Change Difficulty", "Change Match Speed", "Save Game", "Back to Menu"};
-    float startY = 320.f;
-    
-    for (size_t i = 0; i < buttonLabels.size(); ++i) {
-        Button btn;
-        btn.rect.setSize(sf::Vector2f(300.f, 50.f));
-        btn.rect.setPosition(250.f, startY + i * 80.f);
-        btn.rect.setFillColor(UITheme::ButtonNormal);
-        
-        btn.text.setFont(font);
-        btn.text.setString(buttonLabels[i]);
-        btn.text.setCharacterSize(24);
-        btn.text.setFillColor(UITheme::TextWhite);
-        
-        sf::FloatRect textRect = btn.text.getLocalBounds();
-        btn.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top  + textRect.height/2.0f);
-        btn.text.setPosition(
-            btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-            btn.rect.getPosition().y + btn.rect.getSize().y/2.0f
-        );
-        
-        btn.action = buttonLabels[i];
-        m_buttons.push_back(btn);
+    m_rows.clear();
+    m_hoverIdx = m_pressedIdx = -1;
+    m_saveFlash = 0.f;
+
+    struct Def { std::string action, label; RowKind kind; };
+    std::vector<Def> defs = {
+        {"Difficulty",  "Difficulty",   RowKind::Option},
+        {"MatchSpeed",  "Match Speed",  RowKind::Option},
+        {"Fullscreen",  "Fullscreen",   RowKind::Option},
+        {"Resolution",  "Resolution",   RowKind::Option},
+        {"Save",        "Save Game",    RowKind::Action},
+        {"Back",        "Back",         RowKind::Action},
+    };
+
+    const float x = 140.f, w = 520.f, h = 58.f, gap = 66.f, startY = 280.f;
+    for (size_t i = 0; i < defs.size(); ++i) {
+        Row r;
+        r.bounds = sf::FloatRect(x, startY + i * gap, w, h);
+        r.action = defs[i].action;
+        r.label = defs[i].label;
+        r.kind = defs[i].kind;
+        m_rows.push_back(r);
     }
 }
 
-void SettingsScreen::updateDifficultyText() {
-    std::string diffStr = "Normal";
-    if (g_settings.difficulty == 0) diffStr = "Easy";
-    if (g_settings.difficulty == 2) diffStr = "Hard";
-    m_diffText.setString("Current Difficulty: " + diffStr);
+std::string SettingsScreen::currentValue(const std::string& action) const {
+    if (action == "Difficulty") {
+        if (g_settings.difficulty == 0) return "Easy";
+        if (g_settings.difficulty == 2) return "Hard";
+        return "Normal";
+    }
+    if (action == "MatchSpeed") return matchSpeedLabel(g_settings.matchSpeed);
+    if (action == "Fullscreen") return g_settings.isFullscreen ? "On" : "Off";
+    if (action == "Resolution")
+        return std::to_string(g_settings.resWidth) + " x " + std::to_string(g_settings.resHeight);
+    return "";
 }
 
-void SettingsScreen::updateSpeedText() {
-    m_speedText.setString(std::string("Current Match Speed: ") + matchSpeedLabel(g_settings.matchSpeed));
+void SettingsScreen::cycleResolution() {
+    static const unsigned presets[][2] = {{1280, 720}, {1600, 900}, {1920, 1080}};
+    const int n = 3;
+    int cur = 0;
+    for (int i = 0; i < n; ++i)
+        if (presets[i][0] == g_settings.resWidth && presets[i][1] == g_settings.resHeight) cur = i;
+    int next = (cur + 1) % n;
+    g_settings.resWidth = presets[next][0];
+    g_settings.resHeight = presets[next][1];
+    g_settings.isFullscreen = false;  // choosing a resolution implies windowed
+}
+
+void SettingsScreen::activate(const std::string& action) {
+    if (action == "Difficulty") {
+        g_settings.difficulty = (g_settings.difficulty + 1) % 3;
+    } else if (action == "MatchSpeed") {
+        g_settings.matchSpeed = (g_settings.matchSpeed + 1) % matchSpeedCount();
+    } else if (action == "Fullscreen") {
+        g_settings.isFullscreen = !g_settings.isFullscreen;
+        m_gameManager->requestVideoApply();
+    } else if (action == "Resolution") {
+        cycleResolution();
+        m_gameManager->requestVideoApply();
+    } else if (action == "Save") {
+        if (SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(),
+                                  m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {
+            m_saveFlash = 2.0f;
+            std::cout << "Game saved successfully!\n";
+        }
+    } else if (action == "Back") {
+        if (m_gameManager->getPlayer()->currentClub != nullptr)
+            m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+        else
+            m_gameManager->changeScreen(std::make_shared<MenuScreen>());
+    }
 }
 
 void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        // Adjust for view scaling
-        sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
-        sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                if (btn.action == "Back to Menu") {
-                    if (m_gameManager->getPlayer()->currentClub != nullptr) {
-                        m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
-                    } else {
-                        m_gameManager->changeScreen(std::make_shared<MenuScreen>());
-                    }
-                } else if (btn.action == "Change Difficulty") {
-                    g_settings.difficulty = (g_settings.difficulty + 1) % 3;
-                    updateDifficultyText();
-                } else if (btn.action == "Change Match Speed") {
-                    g_settings.matchSpeed = (g_settings.matchSpeed + 1) % matchSpeedCount();
-                    updateSpeedText();
-                } else if (btn.action == "Save Game") {
-                    if (SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(), m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {
-                        std::cout << "Game saved successfully!\n";
-                    }
-                }
-            }
-        }
-    }
-    
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2i pixelPos = sf::Mouse::getPosition(window);
-        sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(UITheme::ButtonHover);
-            } else {
-                btn.rect.setFillColor(UITheme::ButtonNormal);
-            }
-        }
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseMove.x, event.mouseMove.y});
+        m_hoverIdx = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i)
+            if (m_rows[i].bounds.contains(m)) m_hoverIdx = (int)i;
+    }
+
+    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        m_pressedIdx = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i)
+            if (m_rows[i].bounds.contains(m)) m_pressedIdx = (int)i;
+    }
+
+    if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        int released = -1;
+        for (size_t i = 0; i < m_rows.size(); ++i)
+            if (m_rows[i].bounds.contains(m)) released = (int)i;
+        if (released >= 0 && released == m_pressedIdx) activate(m_rows[released].action);
+        m_pressedIdx = -1;
     }
 }
 
-void SettingsScreen::update(sf::Time deltaTime) {}
+void SettingsScreen::update(sf::Time deltaTime) {
+    if (m_saveFlash > 0.f) m_saveFlash -= deltaTime.asSeconds();
+}
 
 void SettingsScreen::draw(sf::RenderWindow& window) {
-    UITheme::drawGradientBackground(window);
-    window.draw(m_titleText);
-    window.draw(m_diffText);
-    window.draw(m_speedText);
-    for (const auto& btn : m_buttons) {
-        window.draw(btn.rect);
-        window.draw(btn.text);
+    auto& font = AssetManager::get().getFont("MainFont");
+
+    UIKit::drawBackground(window);
+    UIKit::drawTitle(window, font, {140.f, 150.f}, "Settings", 46);
+
+    for (size_t i = 0; i < m_rows.size(); ++i) {
+        UIKit::BtnState st = UIKit::BtnState::Normal;
+        if ((int)i == m_pressedIdx)     st = UIKit::BtnState::Pressed;
+        else if ((int)i == m_hoverIdx)  st = UIKit::BtnState::Hover;
+
+        if (m_rows[i].kind == SettingsScreen::RowKind::Option)
+            UIKit::drawOptionRow(window, font, m_rows[i].bounds, m_rows[i].label,
+                                 currentValue(m_rows[i].action), st);
+        else
+            UIKit::drawButton(window, font, m_rows[i].bounds, m_rows[i].label, st);
     }
+
+    if (m_saveFlash > 0.f)
+        UIKit::drawText(window, font, {140.f, 674.f}, "Game saved", 18, UITheme::Accent, 2.0f);
 }

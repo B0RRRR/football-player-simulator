@@ -14,13 +14,13 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Text m_titleText;
-    
     struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
-        std::string action;
+        sf::FloatRect bounds;
+        std::string label;   // shown text
+        std::string action;  // what it does
     };
-    
+
     std::vector<Button> m_buttons;
+    int m_hoverIdx = -1;
+    int m_pressedIdx = -1;
 };

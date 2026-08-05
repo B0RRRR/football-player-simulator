@@ -14,18 +14,23 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Text m_titleText;
-    sf::Text m_playerStatsText;
-    sf::Text m_calendarText;
-
     struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
+        sf::FloatRect bounds;
+        std::string label;
         std::string action;
-        sf::Color baseColor = sf::Color(100, 100, 100);
-        bool isHovered = false;
+        bool primary = false;   // accent-highlighted (Advance Day / Transfer)
     };
-    
-    std::vector<Button> m_buttons;
-    Button m_btnSettings;
+
+    std::vector<Button> m_buttons;   // main action column + debug row (index 0 is dynamic)
+    Button m_transfer;
+    bool m_showTransfer = false;
+
+    std::string m_hoverAction, m_pressedAction;
+
+    // Header text, rebuilt each frame in update().
+    std::string m_clubTitle;
+    std::string m_line1, m_line2, m_notice;
+    sf::Color m_noticeColor = sf::Color::Yellow;
+
+    void dispatch(sf::RenderWindow& window, const std::string& action);
 };

@@ -1,201 +1,158 @@
 #include "MyStatusScreen.h"
+#include "UIKit.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
 #include "AssetManager.h"
 #include "Player.h"
 #include "UITheme.h"
-#include <iomanip>
-#include <sstream>
 
 MyStatusScreen::MyStatusScreen() {
 }
 
 void MyStatusScreen::init() {
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    m_titleText.setFont(font);
-    m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(sf::Color::White);
-    m_titleText.setPosition(50.f, 30.f);
-    m_titleText.setString("My Status");
-    
-    m_infoText.setFont(font);
-    m_infoText.setCharacterSize(24);
-    m_infoText.setFillColor(sf::Color(200, 200, 200));
-    m_infoText.setPosition(50.f, 100.f);
-    
-    m_coachResponseText.setFont(font);
-    m_coachResponseText.setCharacterSize(20);
-    m_coachResponseText.setFillColor(sf::Color::Yellow);
-    m_coachResponseText.setPosition(50.f, 350.f);
-    m_coachResponseText.setString("");
+    m_buttons.clear();
+    m_hoverIdx = m_pressedIdx = -1;
+    m_coachMsg = "";
 
-    Button btnBack;
-    btnBack.rect.setSize(sf::Vector2f(200.f, 40.f));
-    btnBack.rect.setPosition(50.f, 600.f);
-    btnBack.baseColor = sf::Color(150, 50, 50);
-    btnBack.text.setFont(font);
-    btnBack.text.setString("Back");
-    btnBack.text.setCharacterSize(20);
-    btnBack.text.setFillColor(sf::Color::White);
-    sf::FloatRect textRect = btnBack.text.getLocalBounds();
-    btnBack.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-    btnBack.text.setPosition(btnBack.rect.getPosition().x + btnBack.rect.getSize().x/2.0f,
-                             btnBack.rect.getPosition().y + btnBack.rect.getSize().y/2.0f);
-    btnBack.action = "Back";
-    m_buttons.push_back(btnBack);
-    
-    Button btnRequestTransfer;
-    btnRequestTransfer.rect.setSize(sf::Vector2f(250.f, 40.f));
-    btnRequestTransfer.rect.setPosition(450.f, 100.f);
-    btnRequestTransfer.baseColor = sf::Color(50, 50, 150);
-    btnRequestTransfer.text.setFont(font);
-    btnRequestTransfer.text.setString("Request Transfer List");
-    btnRequestTransfer.text.setCharacterSize(18);
-    btnRequestTransfer.text.setFillColor(sf::Color::White);
-    textRect = btnRequestTransfer.text.getLocalBounds();
-    btnRequestTransfer.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-    btnRequestTransfer.text.setPosition(btnRequestTransfer.rect.getPosition().x + btnRequestTransfer.rect.getSize().x/2.0f,
-                                        btnRequestTransfer.rect.getPosition().y + btnRequestTransfer.rect.getSize().y/2.0f);
-    btnRequestTransfer.action = "RequestTransfer";
-    m_buttons.push_back(btnRequestTransfer);
-    
-    Button btnRequestPlayTime;
-    btnRequestPlayTime.rect.setSize(sf::Vector2f(250.f, 40.f));
-    btnRequestPlayTime.rect.setPosition(450.f, 160.f);
-    btnRequestPlayTime.baseColor = sf::Color(50, 150, 50);
-    btnRequestPlayTime.text.setFont(font);
-    btnRequestPlayTime.text.setString("Request Playing Time");
-    btnRequestPlayTime.text.setCharacterSize(18);
-    btnRequestPlayTime.text.setFillColor(sf::Color::White);
-    textRect = btnRequestPlayTime.text.getLocalBounds();
-    btnRequestPlayTime.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-    btnRequestPlayTime.text.setPosition(btnRequestPlayTime.rect.getPosition().x + btnRequestPlayTime.rect.getSize().x/2.0f,
-                                        btnRequestPlayTime.rect.getPosition().y + btnRequestPlayTime.rect.getSize().y/2.0f);
-    btnRequestPlayTime.action = "RequestPlayTime";
-    m_buttons.push_back(btnRequestPlayTime);
-    
-    Button btnToggleAchievements;
-    btnToggleAchievements.rect.setSize(sf::Vector2f(250.f, 40.f));
-    btnToggleAchievements.rect.setPosition(450.f, 220.f);
-    btnToggleAchievements.baseColor = sf::Color(150, 150, 50);
-    btnToggleAchievements.text.setFont(font);
-    btnToggleAchievements.text.setString("Toggle Achievements");
-    btnToggleAchievements.text.setCharacterSize(18);
-    btnToggleAchievements.text.setFillColor(sf::Color::White);
-    textRect = btnToggleAchievements.text.getLocalBounds();
-    btnToggleAchievements.text.setOrigin(textRect.left + textRect.width/2.0f, textRect.top + textRect.height/2.0f);
-    btnToggleAchievements.text.setPosition(btnToggleAchievements.rect.getPosition().x + btnToggleAchievements.rect.getSize().x/2.0f,
-                                        btnToggleAchievements.rect.getPosition().y + btnToggleAchievements.rect.getSize().y/2.0f);
-    btnToggleAchievements.action = "ToggleAchievements";
-    m_buttons.push_back(btnToggleAchievements);
+    struct Def { std::string label, action; };
+    std::vector<Def> defs = {
+        {"Request Transfer List", "RequestTransfer"},
+        {"Request Playing Time",  "RequestPlayTime"},
+        {"Achievements",          "ToggleAchievements"},
+        {"Back",                  "Back"},
+    };
+    const float x = 560.f, w = 430.f, h = 52.f, gap = 60.f, y0 = 210.f;
+    for (size_t i = 0; i < defs.size(); ++i) {
+        Button b;
+        b.bounds = sf::FloatRect(x, y0 + i * gap, w, h);
+        b.label = defs[i].label; b.action = defs[i].action;
+        m_buttons.push_back(b);
+    }
+}
+
+void MyStatusScreen::dispatch(const std::string& action) {
+    Player* p = m_gameManager->getPlayer();
+    if (!p) return;
+    if (action == "Back") {
+        m_gameManager->changeScreen(std::make_shared<CareerHubScreen>()); return;
+    }
+    if (action == "ToggleAchievements") { m_showAchievements = !m_showAchievements; return; }
+    if (action == "RequestTransfer") {
+        if (p->isTransferListed) {
+            m_coachMsg = "Coach: You are already on the transfer list.";
+        } else if (p->coachTrust > 60.0f) {
+            m_coachMsg = "Coach: I'm disappointed, but I'll respect your wish.\nYou are now transfer listed. Your trust drops.";
+            p->isTransferListed = true;
+            p->coachTrust = std::max(0.f, p->coachTrust - 20.0f);
+        } else {
+            m_coachMsg = "Coach: We're not selling you right now. Get back to training!";
+            p->coachTrust = std::max(0.f, p->coachTrust - 10.0f);
+        }
+        m_messageTimer = 6.0f;
+    } else if (action == "RequestPlayTime") {
+        if (p->coachTrust >= 70.0f)
+            m_coachMsg = "Coach: You are already a key player for us!";
+        else if (p->coachTrust > 40.0f)
+            m_coachMsg = "Coach: Keep working hard and you'll get your chance.";
+        else {
+            m_coachMsg = "Coach: You haven't earned it. Stop complaining!";
+            p->coachTrust = std::max(0.f, p->coachTrust - 5.0f);
+        }
+        m_messageTimer = 6.0f;
+    }
 }
 
 void MyStatusScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                Player* p = m_gameManager->getPlayer();
-                
-                if (btn.action == "Back") {
-                    m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
-                } else if (btn.action == "RequestTransfer") {
-                    if (p->isTransferListed) {
-                        m_coachResponseText.setString("Coach: You are already on the transfer list.");
-                    } else {
-                        if (p->coachTrust > 60.0f) {
-                            m_coachResponseText.setString("Coach: I'm disappointed, but I'll respect your wish.\nYou are now transfer listed. Your trust drops.");
-                            p->isTransferListed = true;
-                            p->coachTrust -= 20.0f; // Drop trust because player wants to leave
-                            if (p->coachTrust < 0.0f) p->coachTrust = 0.0f;
-                        } else {
-                            m_coachResponseText.setString("Coach: We're not selling you right now. Get back to training!");
-                            p->coachTrust -= 10.0f;
-                            if (p->coachTrust < 0.0f) p->coachTrust = 0.0f;
-                        }
-                    }
-                    m_messageTimer = 5.0f;
-                } else if (btn.action == "RequestPlayTime") {
-                    if (p->coachTrust >= 70.0f) {
-                        m_coachResponseText.setString("Coach: You are already a key player for us!");
-                    } else if (p->coachTrust > 40.0f) {
-                        m_coachResponseText.setString("Coach: Keep working hard in training and you'll get your chance.");
-                    } else {
-                        m_coachResponseText.setString("Coach: You haven't earned it. Stop complaining!");
-                        p->coachTrust -= 5.0f;
-                        if (p->coachTrust < 0.0f) p->coachTrust = 0.0f;
-                    }
-                    m_messageTimer = 5.0f;
-                } else if (btn.action == "ToggleAchievements") {
-                    m_showAchievements = !m_showAchievements;
-                }
-            }
-        }
-    }
-    
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(sf::Color(btn.baseColor.r + 30, btn.baseColor.g + 30, btn.baseColor.b + 30));
-            } else {
-                btn.rect.setFillColor(btn.baseColor);
-            }
-        }
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseMove.x, event.mouseMove.y});
+        m_hoverIdx = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) m_hoverIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        m_pressedIdx = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) m_pressedIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        int rel = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) rel = (int)i;
+        if (rel >= 0 && rel == m_pressedIdx) dispatch(m_buttons[rel].action);
+        m_pressedIdx = -1;
     }
 }
 
 void MyStatusScreen::update(sf::Time deltaTime) {
-    Player* p = m_gameManager->getPlayer();
-    if (!p) return;
-    
     if (m_messageTimer > 0.0f) {
         m_messageTimer -= deltaTime.asSeconds();
-        if (m_messageTimer <= 0.0f) {
-            m_coachResponseText.setString("");
-        }
+        if (m_messageTimer <= 0.0f) m_coachMsg = "";
     }
-
-    std::string info = "";
-    if (m_showAchievements) {
-        info = "=== ACHIEVEMENTS ===\n\n";
-        if (p->achievements.empty()) {
-            info += "No achievements yet. Keep playing!\n";
-        } else {
-            for (const auto& ach : p->achievements) {
-                info += "- " + ach + "\n";
-            }
-        }
-    } else {
-        info = "Club: " + (p->currentClub ? p->currentClub->name : "None") + "\n\n";
-        info += "Coach Trust: " + std::to_string((int)p->coachTrust) + " / 100\n";
-        if (p->coachTrust < 30.0f) info += "Status: BENCHED\n";
-        else info += "Status: ACTIVE\n";
-        
-        info += "\nContract: " + std::to_string(p->contractYearsLeft) + " years left\n";
-        info += "Salary: $" + std::to_string(p->salary) + "/w\n";
-        
-        if (p->isTransferListed) {
-            info += "\nTransfer Status: LISTED\n";
-        } else {
-            info += "\nTransfer Status: NOT FOR SALE\n";
-        }
-    }
-    
-    m_infoText.setString(info);
 }
 
 void MyStatusScreen::draw(sf::RenderWindow& window) {
-    UITheme::drawGradientBackground(window);
-    
-    window.draw(m_titleText);
-    window.draw(m_infoText);
-    window.draw(m_coachResponseText);
-    
-    for (const auto& btn : m_buttons) {
-        window.draw(btn.rect);
-        window.draw(btn.text);
+    auto& font = AssetManager::get().getFont("MainFont");
+    Player* p = m_gameManager->getPlayer();
+
+    UIKit::drawBackground(window);
+    UIKit::drawTitle(window, font, {90.f, 110.f}, "My Status", 44);
+
+    // Info panel (left).
+    UIKit::drawPanel(window, {90.f, 200.f, 430.f, 400.f});
+    if (p) {
+        if (m_showAchievements) {
+            UIKit::drawText(window, font, {118.f, 220.f}, "ACHIEVEMENTS", 18, UITheme::Accent, 2.0f, true);
+            float y = 258.f;
+            if (p->achievements.empty()) {
+                UIKit::drawText(window, font, {118.f, y}, "No achievements yet - keep playing!", 17, UITheme::TextDim, 1.0f);
+            } else {
+                for (const auto& a : p->achievements) {
+                    UIKit::drawIcon(window, "star", {122.f, y + 8.f}, 8.f, UITheme::Highlight);
+                    UIKit::drawText(window, font, {140.f, y}, a, 16, UITheme::TextWhite, 1.0f);
+                    y += 28.f;
+                    if (y > 580.f) break;
+                }
+            }
+        } else {
+            float y = 224.f;
+            auto row = [&](const std::string& ic, sf::Color icc, const std::string& s, sf::Color tc = UITheme::TextWhite) {
+                UIKit::drawIcon(window, ic, {118.f, y + 18 * 0.55f}, 9.f, icc);
+                UIKit::drawText(window, font, {140.f, y}, s, 18, tc, 1.0f); y += 34.f;
+            };
+            row("shield", UITheme::Accent, "Club:  " + std::string(p->currentClub ? p->currentClub->name : "None"));
+
+            // Coach trust with a bar.
+            UIKit::drawIcon(window, "smiley", {118.f, y + 18 * 0.55f}, 9.f, UITheme::Accent);
+            UIKit::drawText(window, font, {140.f, y}, "Coach Trust", 18, UITheme::TextWhite, 1.0f);
+            UIKit::drawText(window, font, {430.f, y}, std::to_string((int)p->coachTrust) + " / 100", 16, UITheme::Accent, 1.0f, true);
+            y += 30.f;
+            float bx = 140.f, bw = 350.f, bh = 12.f;
+            window.draw(UIKit::roundedRect({bx, y}, {bw, bh}, 6.f, UITheme::PanelPressed));
+            float frac = std::clamp(p->coachTrust / 100.f, 0.f, 1.f);
+            sf::Color barc = p->coachTrust < 30.f ? sf::Color(230, 90, 90)
+                           : p->coachTrust < 60.f ? UITheme::Highlight : UITheme::Accent;
+            if (frac > 0.02f) window.draw(UIKit::roundedRect({bx, y}, {bw * frac, bh}, 6.f, barc));
+            y += 30.f;
+
+            row("star",  UITheme::Accent, std::string("Status:  ") + (p->coachTrust < 30.f ? "Benched" : "Active"),
+                p->coachTrust < 30.f ? sf::Color(230, 120, 120) : UITheme::TextWhite);
+            row("chart", UITheme::Accent, "Contract:  " + std::to_string(p->contractYearsLeft) + " years left");
+            row("coin",  UITheme::Highlight, "Salary:  $" + std::to_string(p->salary) + "/w");
+            row("arrow", UITheme::Accent, std::string("Transfer:  ") + (p->isTransferListed ? "LISTED" : "Not for sale"),
+                p->isTransferListed ? UITheme::Highlight : UITheme::TextWhite);
+        }
+    }
+
+    // Buttons (right).
+    for (size_t i = 0; i < m_buttons.size(); ++i) {
+        UIKit::BtnState st = UIKit::BtnState::Normal;
+        if ((int)i == m_pressedIdx)     st = UIKit::BtnState::Pressed;
+        else if ((int)i == m_hoverIdx)  st = UIKit::BtnState::Hover;
+        UIKit::drawButton(window, font, m_buttons[i].bounds, m_buttons[i].label, st);
+    }
+
+    // Coach reply.
+    if (!m_coachMsg.empty()) {
+        UIKit::drawPanel(window, {560.f, 470.f, 430.f, 130.f}, true);
+        UIKit::drawText(window, font, {584.f, 486.f}, m_coachMsg, 16, UITheme::Highlight, 1.0f);
     }
 }

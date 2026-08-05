@@ -14,17 +14,15 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Text m_titleText;
-    sf::Text m_xpText;
-    sf::Text m_statsText;
-    
-    struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
+    struct Row {
+        sf::FloatRect bounds;
         std::string action;
+        std::string icon;
     };
-    
-    std::vector<Button> m_buttons;
-    
-    const int UPGRADE_COST = 100;
+
+    std::vector<Row> m_rows;
+    int m_hoverIdx = -1;
+    int m_pressedIdx = -1;
+
+    void dispatch(const std::string& action);
 };
