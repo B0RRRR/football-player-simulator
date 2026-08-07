@@ -19,3 +19,7 @@ Makefile
 savegame.json
 settings.json
 *.json
+
+# Windows "downloaded from internet" ADS marker files (break checkout on Windows)
+*Zone.Identifier
+*:Zone.Identifier
