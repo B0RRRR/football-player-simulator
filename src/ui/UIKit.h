@@ -149,10 +149,23 @@ namespace UIKit {
         }
     }
 
+    // Vertically-centre a crisp label on centreY (uses the glyphs' own bounds).
+    inline void drawTextCenteredY(sf::RenderWindow& window, const sf::Font& font, float x,
+                                  float centreY, const std::string& s, unsigned size, sf::Color color,
+                                  float letterSpacing = 1.f, bool bold = false) {
+        sf::Text t = crispText(font, s, size);
+        t.setFillColor(color);
+        t.setLetterSpacing(letterSpacing);
+        if (bold) t.setStyle(sf::Text::Bold);
+        sf::FloatRect b = t.getGlobalBounds(); // position still (0,0): b.top is the top offset
+        t.setPosition(x, centreY - b.top - b.height * 0.5f);
+        window.draw(t);
+    }
+
     // A broadcast menu button: dark panel, a left accent bar that grows on hover, the label,
-    // and a chevron highlight when active.
+    // and (optionally) a chevron highlight when active.
     inline void drawButton(sf::RenderWindow& window, sf::Font& font, sf::FloatRect bounds,
-                           const std::string& label, BtnState state) {
+                           const std::string& label, BtnState state, bool chevron = true) {
         sf::Vector2f pos(bounds.left, bounds.top), size(bounds.width, bounds.height);
         float barW = detail::rowBase(window, pos, size, state);
 
@@ -163,7 +176,7 @@ namespace UIKit {
         t.setPosition(pos.x + barW + 20.f, pos.y + size.y * 0.5f - labelSize * 0.72f);
         window.draw(t);
 
-        if (state != BtnState::Normal) {
+        if (chevron && state != BtnState::Normal) {
             sf::Text chev = crispText(font, ">", 24);
             chev.setStyle(sf::Text::Bold);
             chev.setFillColor(UITheme::Accent);
@@ -225,6 +238,42 @@ namespace UIKit {
             v.setPosition(pos.x + size.x - 26.f - vw, pos.y + size.y * 0.5f - labelSize * 0.72f);
             window.draw(v);
         }
+    }
+
+    // The draggable track rectangle of a slider row (shared by draw + hit-testing so they agree).
+    inline sf::FloatRect sliderTrack(sf::FloatRect b) {
+        float left = b.left + 190.f, right = b.left + b.width - 78.f;
+        return sf::FloatRect(left, b.top + b.height * 0.5f - 4.f, right - left, 8.f);
+    }
+
+    // A settings row with a drag slider: label on the left, a filled track + knob, and the
+    // current value as a percentage on the right. value01 is 0..1.
+    inline void drawSlider(sf::RenderWindow& window, sf::Font& font, sf::FloatRect bounds,
+                           const std::string& label, float value01, BtnState state) {
+        value01 = std::clamp(value01, 0.f, 1.f);
+        sf::Vector2f pos(bounds.left, bounds.top), size(bounds.width, bounds.height);
+        float barW = detail::rowBase(window, pos, size, state);
+
+        drawTextCenteredY(window, font, pos.x + barW + 20.f, pos.y + size.y * 0.5f, label, 21,
+                          state == BtnState::Normal ? UITheme::TextDim : UITheme::TextWhite, 1.05f);
+
+        sf::FloatRect tr = sliderTrack(bounds);
+        window.draw(roundedRect({tr.left, tr.top}, {tr.width, tr.height}, 4.f, UITheme::PanelPressed));
+        if (value01 > 0.001f)
+            window.draw(roundedRect({tr.left, tr.top}, {tr.width * value01, tr.height}, 4.f, UITheme::Accent));
+
+        float kx = tr.left + tr.width * value01, ky = tr.top + tr.height * 0.5f;
+        sf::CircleShape knob(9.f);
+        knob.setOrigin(9.f, 9.f);
+        knob.setPosition(kx, ky);
+        knob.setFillColor(state == BtnState::Normal ? UITheme::Accent : UITheme::TextWhite);
+        knob.setOutlineThickness(2.f);
+        knob.setOutlineColor(UITheme::Accent);
+        window.draw(knob);
+
+        std::string vs = std::to_string((int)std::lround(value01 * 100.f)) + "%";
+        drawTextCenteredY(window, font, pos.x + size.x - 62.f, pos.y + size.y * 0.5f, vs, 18,
+                          UITheme::Accent, 1.0f, true);
     }
 
     // A plain card/panel for grouping content.

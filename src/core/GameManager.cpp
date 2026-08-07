@@ -1,11 +1,14 @@
 #include "GameManager.h"
 #include "Settings.h"
 #include "AssetManager.h"
+#include "AudioManager.h"
 #include "PlatformDisplay.h"
 #include <iostream>
 
-GameManager::GameManager() 
+GameManager::GameManager()
 {
+    g_settings.load(); // restore saved settings before the window/audio are created
+
     m_database.init();
     m_player = std::make_unique<Player>("My Player");
     m_careerManager = std::make_unique<CareerManager>(this);
@@ -14,6 +17,12 @@ GameManager::GameManager()
 
     // Load global assets here
     AssetManager::get().loadFont("MainFont", "assets/fonts/Roboto-Regular.ttf");
+    AudioManager::get().loadAll();
+    // Background music. Drop any number of tracks into assets/music/ and they rotate on a loop;
+    // if that folder is empty, fall back to a single assets/sounds/menu.* file. Missing files =
+    // silence, no crash.
+    if (!AudioManager::get().musicPlaylist("assets/music"))
+        AudioManager::get().playMusic("menu", true);
 }
 
 GameManager::~GameManager() = default;
@@ -116,12 +125,21 @@ void GameManager::run() {
                 applyLetterbox(event.size.width, event.size.height);
             }
             
+            // A universal UI click for menu-style screens (gameplay screens opt out).
+            if (event.type == sf::Event::MouseButtonPressed
+                && event.mouseButton.button == sf::Mouse::Left
+                && m_currentScreen && m_currentScreen->playsClickOnPress()) {
+                AudioManager::get().sfx("ui_click");
+            }
+
             if (m_currentScreen) {
                 m_currentScreen->handleInput(m_window, event);
             }
         }
         
         // Update logic
+        AudioManager::get().setMusicEnabled(!m_currentScreen || m_currentScreen->wantsMenuMusic());
+        AudioManager::get().update(); // rotate the music playlist when a track finishes
         if (m_currentScreen) {
             m_currentScreen->update(deltaTime);
         }

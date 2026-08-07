@@ -23,33 +23,32 @@ CareerHubScreen::CareerHubScreen() {
 }
 
 void CareerHubScreen::init() {
-    m_buttons.clear();
     m_hoverAction = m_pressedAction = "";
+    buildColumn();
+}
+
+void CareerHubScreen::buildColumn() {
+    m_buttons.clear();
 
     struct Def { std::string label, action; bool primary; };
-    std::vector<Def> defs = {
-        {"Advance Day",   "Advance Day",   true},
-        {"My Status",     "My Status",     false},
-        {"My Squad",      "My Squad",      false},
-        {"Upgrades",      "Upgrades",      false},
-        {"League Table",  "League Table",  false},
-        {"Tournaments",   "Tournaments",   false},
-        {"Settings",      "Settings",      false},
-        {"Quit to Menu",  "Quit to Menu",  false},
-    };
-    const float x = 560.f, w = 430.f, h = 48.f, gap = 54.f, y0 = 150.f;
+    std::vector<Def> defs = { {"Advance Day", "Advance Day", true} };
+    // During an open transfer window, a prominent Transfer Hub button sits right at the top.
+    if (m_windowOpen) defs.push_back({"Transfer Hub", "Transfer Center", true});
+    defs.push_back({"My Status",    "My Status",    false});
+    defs.push_back({"My Squad",     "My Squad",     false});
+    defs.push_back({"Upgrades",     "Upgrades",     false});
+    defs.push_back({"League Table", "League Table", false});
+    defs.push_back({"Tournaments",  "Tournaments",  false});
+    defs.push_back({"Settings",     "Settings",     false});
+    defs.push_back({"Quit to Menu", "Quit to Menu", false});
+
+    const float x = 560.f, w = 430.f, h = 46.f, gap = 50.f, y0 = 150.f;
     for (size_t i = 0; i < defs.size(); ++i) {
         Button b;
         b.bounds = sf::FloatRect(x, y0 + i * gap, w, h);
         b.label = defs[i].label; b.action = defs[i].action; b.primary = defs[i].primary;
         m_buttons.push_back(b);
     }
-
-    // Transfer Center: shown only during a window (added visually in draw), fixed slot.
-    m_transfer.bounds = sf::FloatRect(x, y0 + defs.size() * gap, w, h);
-    m_transfer.label = "Transfer Center";
-    m_transfer.action = "Transfer Center";
-    m_transfer.primary = true;
 
     // Debug shortcuts, a small row along the bottom.
     struct Dbg { std::string label, action; };
@@ -69,7 +68,6 @@ void CareerHubScreen::init() {
 
 void CareerHubScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
     auto actionAt = [&](sf::Vector2f m) -> std::string {
-        if (m_showTransfer && m_transfer.bounds.contains(m)) return m_transfer.action;
         for (auto& b : m_buttons) if (b.bounds.contains(m)) return b.action;
         return "";
     };
@@ -256,10 +254,12 @@ void CareerHubScreen::update(sf::Time deltaTime) {
         m_buttons[0].label = "Advance Day"; m_buttons[0].action = "Advance Day"; m_buttons[0].primary = true;
     }
 
-    // Transfer window visibility.
+    // Transfer window: rebuild the column (adds/removes the Transfer Hub button) when it opens
+    // or closes.
     int currentDay = cm->getCurrentDay();
     bool isTransferWindow = cm->isSummerBreak() || (currentDay >= 154 && currentDay <= 184);
-    m_showTransfer = (isTransferWindow && p->weeksPlayed > 0);
+    m_windowOpen = (isTransferWindow && p->weeksPlayed > 0);
+    if (m_windowOpen != m_lastWindowOpen) { buildColumn(); m_lastWindowOpen = m_windowOpen; }
 
     // Date / schedule header lines.
     int currentYear = cm->getYear();
@@ -381,9 +381,10 @@ void CareerHubScreen::draw(sf::RenderWindow& window) {
         row("coin",   UITheme::Highlight, "Salary   $" + std::to_string(p->salary) + "/w");
     }
 
-    // Action buttons.
-    for (const auto& b : m_buttons)
-        UIKit::drawButton(window, font, b.bounds, b.label, stateOf(b.action));
-    if (m_showTransfer)
-        UIKit::drawButton(window, font, m_transfer.bounds, m_transfer.label, stateOf(m_transfer.action));
+    // Action buttons. Primary actions (Advance Day, Transfer Hub) stay accent-lit so they stand out.
+    for (const auto& b : m_buttons) {
+        UIKit::BtnState st = stateOf(b.action);
+        if (b.primary && st == UIKit::BtnState::Normal) st = UIKit::BtnState::Hover;
+        UIKit::drawButton(window, font, b.bounds, b.label, st);
+    }
 }

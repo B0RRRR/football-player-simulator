@@ -22,6 +22,7 @@ public:
     void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
     void update(sf::Time deltaTime) override;
     void draw(sf::RenderWindow& window) override;
+    bool playsClickOnPress() const override { return false; } // drill drives its own audio
 
 private:
     void initGame();

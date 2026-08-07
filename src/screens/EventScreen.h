@@ -14,10 +14,8 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    sf::Text m_titleText;
-    sf::Text m_descriptionText;
-    sf::RectangleShape m_timerBar;
-    sf::RectangleShape m_timerBg;
+    std::string m_title = "Event";
+    std::string m_desc;
 
     struct EventOption {
         std::string text;
@@ -34,12 +32,14 @@ private:
     };
 
     struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
+        sf::FloatRect bounds;
+        std::string label;
         EventOption option;
     };
 
     std::vector<Button> m_buttons;
+    int m_hoverIdx = -1;
+    int m_pressedIdx = -1;
     std::vector<EventQuestion> m_currentQuestions;
     int m_questionIndex = 0;
     

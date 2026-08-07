@@ -8,6 +8,11 @@ struct Settings {
     unsigned int resWidth = 1280;
     unsigned int resHeight = 720;
     int matchSpeed = 1; // index into the speed table below: 0=0.5x .. 4=2.5x (default 1x)
+
+    // Persist to / restore from a small text file next to the executable, so volumes,
+    // difficulty, resolution etc. survive a restart.
+    void save() const;
+    void load();
 };
 
 // Global settings instance

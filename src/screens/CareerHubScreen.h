@@ -22,10 +22,11 @@ private:
     };
 
     std::vector<Button> m_buttons;   // main action column + debug row (index 0 is dynamic)
-    Button m_transfer;
-    bool m_showTransfer = false;
+    bool m_windowOpen = false, m_lastWindowOpen = false; // transfer window state (drives the column)
 
     std::string m_hoverAction, m_pressedAction;
+
+    void buildColumn(); // (re)lays out the action column, incl. a Transfer Hub button in a window
 
     // Header text, rebuilt each frame in update().
     std::string m_clubTitle;

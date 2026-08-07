@@ -14,7 +14,7 @@ public:
     void draw(sf::RenderWindow& window) override;
 
 private:
-    enum class RowKind { Option, Action };
+    enum class RowKind { Option, Action, Slider };
     struct Row {
         sf::FloatRect bounds;
         std::string action;  // identifier
@@ -25,9 +25,11 @@ private:
     std::vector<Row> m_rows;
     int m_hoverIdx = -1;
     int m_pressedIdx = -1;
+    std::string m_dragAction;  // which slider is currently being dragged ("" = none)
     float m_saveFlash = 0.f;   // brief "Saved" confirmation timer
 
     std::string currentValue(const std::string& action) const; // right-hand value for a row
     void activate(const std::string& action);
     void cycleResolution();
+    void setVolumeFromMouse(const std::string& action, float mouseX);
 };

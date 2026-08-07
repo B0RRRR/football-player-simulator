@@ -13,14 +13,7 @@ public:
     virtual void draw(sf::RenderWindow& window) override;
 
 private:
-    struct Button {
-        sf::RectangleShape rect;
-        sf::Text text;
-        std::string action;
-    };
-
-    sf::Text m_titleText;
-    sf::Text m_statsText;
-    sf::Text m_infoText;
+    struct Button { sf::FloatRect bounds; std::string label; std::string action; bool primary = false; };
     std::vector<Button> m_buttons;
+    int m_hoverIdx = -1, m_pressedIdx = -1;
 };

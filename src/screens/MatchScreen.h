@@ -79,6 +79,8 @@ public:
     virtual void handleInput(sf::RenderWindow& window, const sf::Event& event) override;
     virtual void update(sf::Time deltaTime) override;
     virtual void draw(sf::RenderWindow& window) override;
+    bool playsClickOnPress() const override { return false; } // match drives its own audio
+    bool wantsMenuMusic() const override { return false; }     // silence menu music during the match
 
 private:
     void initMinigame();

@@ -5,6 +5,7 @@
 #include "Database.h"
 #include "AssetManager.h"
 #include "UITheme.h"
+#include "UIKit.h"
 #include "CareerManager.h"
 #include <algorithm>
 #include <iostream>
@@ -13,29 +14,6 @@
 AwardsScreen::AwardsScreen() {}
 
 void AwardsScreen::init() {
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    m_titleText.setFont(font);
-    m_titleText.setCharacterSize(40);
-    m_titleText.setFillColor(sf::Color::White);
-    m_titleText.setPosition(100.f, 50.f);
-    m_titleText.setString("End of Season Awards Ceremony");
-    
-    m_awardTitleText.setFont(font);
-    m_awardTitleText.setCharacterSize(36);
-    m_awardTitleText.setFillColor(sf::Color::Yellow);
-    m_awardTitleText.setPosition(100.f, 200.f);
-    
-    m_winnerNameText.setFont(font);
-    m_winnerNameText.setCharacterSize(48);
-    m_winnerNameText.setFillColor(sf::Color::White);
-    m_winnerNameText.setPosition(100.f, 300.f);
-    
-    m_statInfoText.setFont(font);
-    m_statInfoText.setCharacterSize(24);
-    m_statInfoText.setFillColor(sf::Color(200, 200, 200));
-    m_statInfoText.setPosition(100.f, 400.f);
-    
     processAwards();
     showCurrentAward();
 }
@@ -221,95 +199,71 @@ void AwardsScreen::processAwards() {
 
 void AwardsScreen::showCurrentAward() {
     m_buttons.clear();
-    auto& font = AssetManager::get().getFont("MainFont");
-    
-    if (m_currentAwardIndex < m_awards.size()) {
-        const auto& aw = m_awards[m_currentAwardIndex];
-        m_awardTitleText.setString(aw.title);
-        m_winnerNameText.setString(UITheme::u8(aw.winnerName + " (" + aw.winnerClub + ")"));
-        if (aw.isRealPlayer) {
-            m_winnerNameText.setFillColor(sf::Color::Green);
-        } else {
-            m_winnerNameText.setFillColor(sf::Color::White);
-        }
-        m_statInfoText.setString(aw.statInfo);
-        
-        Button btn;
-        btn.rect.setSize(sf::Vector2f(200.f, 50.f));
-        btn.rect.setPosition(100.f, 500.f);
-        btn.rect.setFillColor(UITheme::ButtonNormal);
-        btn.text.setFont(font);
-        btn.text.setString("Next Award");
-        btn.text.setCharacterSize(20);
-        btn.text.setFillColor(sf::Color::White);
-        
-        sf::FloatRect tr = btn.text.getLocalBounds();
-        btn.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
-        btn.text.setPosition(btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-                             btn.rect.getPosition().y + btn.rect.getSize().y/2.0f);
-        btn.action = "NEXT";
-        m_buttons.push_back(btn);
-    } else {
-        m_awardTitleText.setString("Ceremony Concluded");
-        m_winnerNameText.setString("");
-        m_statInfoText.setString("All awards have been distributed.");
-        
-        Button btn;
-        btn.rect.setSize(sf::Vector2f(300.f, 50.f));
-        btn.rect.setPosition(100.f, 500.f);
-        btn.rect.setFillColor(UITheme::ButtonNormal);
-        btn.text.setFont(font);
-        btn.text.setString("Proceed to Season Summary");
-        btn.text.setCharacterSize(20);
-        btn.text.setFillColor(sf::Color::White);
-        
-        sf::FloatRect tr = btn.text.getLocalBounds();
-        btn.text.setOrigin(tr.left + tr.width/2.0f, tr.top + tr.height/2.0f);
-        btn.text.setPosition(btn.rect.getPosition().x + btn.rect.getSize().x/2.0f,
-                             btn.rect.getPosition().y + btn.rect.getSize().y/2.0f);
-        btn.action = "FINISH";
-        m_buttons.push_back(btn);
-    }
+    m_hoverIdx = m_pressedIdx = -1;
+    if (m_currentAwardIndex < (int)m_awards.size())
+        m_buttons.push_back({sf::FloatRect(540.f, 566.f, 200.f, 54.f), "Next Award", "NEXT"});
+    else
+        m_buttons.push_back({sf::FloatRect(480.f, 566.f, 320.f, 54.f), "Proceed to Season Summary", "FINISH"});
 }
 
 void AwardsScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
-    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
-        sf::Vector2i pixelPos(event.mouseButton.x, event.mouseButton.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                if (btn.action == "NEXT") {
-                    m_currentAwardIndex++;
-                    showCurrentAward();
-                } else if (btn.action == "FINISH") {
-                    m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
-                }
-            }
-        }
-    }
-    
     if (event.type == sf::Event::MouseMoved) {
-        sf::Vector2i pixelPos(event.mouseMove.x, event.mouseMove.y); sf::Vector2f mousePos = window.mapPixelToCoords(pixelPos);
-        for (auto& btn : m_buttons) {
-            if (btn.rect.getGlobalBounds().contains(mousePos)) {
-                btn.rect.setFillColor(UITheme::ButtonHover);
-            } else {
-                btn.rect.setFillColor(UITheme::ButtonNormal);
-            }
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseMove.x, event.mouseMove.y});
+        m_hoverIdx = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) m_hoverIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        m_pressedIdx = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) m_pressedIdx = (int)i;
+    }
+    if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
+        sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        int rel = -1;
+        for (size_t i = 0; i < m_buttons.size(); ++i) if (m_buttons[i].bounds.contains(m)) rel = (int)i;
+        if (rel >= 0 && rel == m_pressedIdx) {
+            if (m_buttons[rel].action == "NEXT") { m_currentAwardIndex++; showCurrentAward(); }
+            else m_gameManager->changeScreen(std::make_shared<SeasonEndScreen>());
         }
+        m_pressedIdx = -1;
     }
 }
 
-void AwardsScreen::update(sf::Time deltaTime) {}
+void AwardsScreen::update(sf::Time) {}
 
 void AwardsScreen::draw(sf::RenderWindow& window) {
-    UITheme::drawGradientBackground(window);
-    window.draw(m_titleText);
-    window.draw(m_awardTitleText);
-    window.draw(m_winnerNameText);
-    window.draw(m_statInfoText);
-    
-    for (auto& btn : m_buttons) {
-        window.draw(btn.rect);
-        window.draw(btn.text);
+    auto& font = AssetManager::get().getFont("MainFont");
+    UIKit::drawBackground(window);
+    UIKit::drawTitle(window, font, {90.f, 44.f}, "Awards Ceremony", 40);
+
+    auto ctext = [&](float y, const std::string& s, unsigned sz, sf::Color c, bool bold = false) {
+        float w = UIKit::crispText(font, s, sz).getGlobalBounds().width;
+        UIKit::drawText(window, font, {640.f - w * 0.5f, y}, s, sz, c, 1.0f, bold);
+    };
+
+    bool done = m_currentAwardIndex >= (int)m_awards.size();
+    if (!done)
+        ctext(150.f, "AWARD " + std::to_string(m_currentAwardIndex + 1) + " OF " + std::to_string((int)m_awards.size()), 15, UITheme::Accent);
+
+    UIKit::drawPanel(window, {290.f, 196.f, 700.f, 320.f});
+    if (!done) {
+        const auto& aw = m_awards[m_currentAwardIndex];
+        UIKit::drawIcon(window, "star", {640.f, 252.f}, 22.f, UITheme::Highlight);
+        ctext(292.f, aw.title, 26, UITheme::Accent, true);
+        ctext(346.f, aw.winnerName + "  (" + aw.winnerClub + ")", 32,
+              aw.isRealPlayer ? sf::Color(90, 210, 120) : UITheme::TextWhite, true);
+        ctext(408.f, aw.statInfo, 20, UITheme::TextDim);
+        if (aw.isRealPlayer) ctext(446.f, "THAT'S YOU!", 15, sf::Color(90, 210, 120), true);
+    } else {
+        UIKit::drawIcon(window, "star", {640.f, 280.f}, 26.f, UITheme::Highlight);
+        ctext(330.f, "Ceremony Concluded", 30, UITheme::TextWhite, true);
+        ctext(384.f, "All awards have been distributed.", 18, UITheme::TextDim);
+    }
+
+    for (size_t i = 0; i < m_buttons.size(); ++i) {
+        UIKit::BtnState st = UIKit::BtnState::Normal;
+        if ((int)i == m_pressedIdx)     st = UIKit::BtnState::Pressed;
+        else if ((int)i == m_hoverIdx)  st = UIKit::BtnState::Hover;
+        UIKit::drawButton(window, font, m_buttons[i].bounds, m_buttons[i].label, st);
     }
 }
