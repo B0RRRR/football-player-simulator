@@ -27,6 +27,9 @@ public:
     // silences the playlist while it's on screen (resumed automatically afterwards).
     virtual bool wantsMenuMusic() const { return true; }
 
+    // Stadium ambience (intershum) plays only during an actual match.
+    virtual bool wantsMatchAmbience() const { return false; }
+
 protected:
     GameManager* m_gameManager = nullptr;
     

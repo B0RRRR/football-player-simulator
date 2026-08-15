@@ -1,5 +1,7 @@
 #include "MatchScreen.h"
 #include "MatchStatsScreen.h"
+#include "CareerHubScreen.h"
+#include "CareerManager.h"
 #include "GameManager.h"
 #include "AssetManager.h"
 #include "Player.h"
@@ -7,6 +9,10 @@
 #include "UITheme.h"
 #include "ShotPath.h"
 #include "PitchRenderer.h"
+#include "Kits.h"
+#include "AudioManager.h"
+#include "UIKit.h"
+#include "Logger.h"
 #include <iostream>
 #include <cmath>
 #include <cstdio>
@@ -96,8 +102,19 @@ int MatchScreen::nearestToBall(int base) const {
 }
 
 void MatchScreen::init() {
+    PitchRenderer::resetAnim(); // fresh player animation state for this match
+    AudioManager::get().sfx("whistle_long"); // kick-off
+    m_prevHomeScore = m_prevAwayScore = 0;
+    m_fullTimeWhistled = false;
+    m_prevCarrier = -1;
+    m_kickCd = 0.f;
+    m_prevBallPos = sf::Vector2f(440.f, 290.f);
+    m_prevBallSpeed = 0.f;
+    m_halfTime = false;
+    m_secondHalf = false;
+    m_secondHalfBtn = sf::FloatRect(540.f, 470.f, 200.f, 56.f);
     Player* p = m_gameManager->getPlayer();
-    
+
     Club* opp = nullptr;
     bool isHomeMatch = true;
     Club* playerClub = p->currentClub;
@@ -141,12 +158,42 @@ void MatchScreen::init() {
         }
     }
     
+    // Safety net: if the fixture search didn't produce an opponent (odd scheduling, a club that
+    // just changed division, a stale pointer, ...), fall back to any other club rather than
+    // passing a null opponent into MatchEngine, whose constructor dereferences it -> crash.
+    if (!opp && playerClub) {
+        LOG_WARN("Match: no fixture opponent found for " << playerClub->name << " - using a fallback");
+        for (const auto& l : m_gameManager->getDatabase().getLeagues()) {
+            for (const auto& c : l.clubs) {
+                if (c.name != playerClub->name) { opp = m_gameManager->getDatabase().getClub(l.name, c.name); break; }
+            }
+            if (opp) break;
+        }
+    }
+    if (!playerClub || !opp) {
+        // Nothing to play (no clubs at all) - skip the day instead of crashing.
+        m_gameManager->getCareerManager()->advanceDay();
+        m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
+        return;
+    }
+
     m_engine = std::make_shared<MatchEngine>(playerClub, opp, isHomeMatch, p);
+
+    // Club kit colours (home wears home kit; away switches if it would clash).
+    if (m_engine->getPlayerClub() && m_engine->getOpponentClub()) {
+        std::string homeName = m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
+        std::string awayName = m_engine->isHome() ? m_engine->getOpponentClub()->name : m_engine->getPlayerClub()->name;
+        Kits::resolve(homeName, awayName, m_homeShirt, m_awayShirt);
+        m_homeKeeperShirt = Kits::keeper({m_homeShirt, m_awayShirt});
+        m_awayKeeperShirt = Kits::keeper({m_awayShirt, m_homeShirt, m_homeKeeperShirt});
+    }
 
     auto& font = AssetManager::get().getFont("MainFont");
     
     std::string homeNameStr = m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
     std::string awayNameStr = m_engine->isHome() ? m_engine->getOpponentClub()->name : m_engine->getPlayerClub()->name;
+    LOG_INFO("Match kick-off: " << homeNameStr << " vs " << awayNameStr
+             << " (user " << (m_engine->isHome() ? "home" : "away") << ")");
     bool isNat = m_gameManager->getCareerManager()->hasInternationalMatchToday();
     
     m_homeLogo.setTexture(AssetManager::get().getTexture(homeNameStr, isNat));
@@ -261,6 +308,21 @@ void MatchScreen::init() {
 
 
 void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) {
+    // On the half-time screen only the "Start Second Half" button is live.
+    if (m_halfTime) {
+        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+            sf::Vector2f m = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y}, m_uiView);
+            if (m_secondHalfBtn.contains(m)) {
+                m_halfTime = false;
+                m_secondHalf = true;          // switch ends (visual mirror)
+                AudioManager::get().sfx("whistle_long"); // second-half kick-off
+                resetToKickoff();             // restart from the centre spot
+                m_prevBallPos = m_visualBall.getPosition(); // don't count the recentre as a kick
+            }
+        }
+        return;
+    }
+
     // Movement keys are cleared on release ALWAYS, not just while a minigame is running.
     // The release used to be swallowed if the episode ended with a key still held, leaving
     // the flag stuck on so the player kept running by himself in the next one.
@@ -386,6 +448,7 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
         // Map through the match camera explicitly - it zooms during episodes, and the
         // window's own view is the HUD one by the time events are polled.
         sf::Vector2f aim = window.mapPixelToCoords(sf::Vector2i(event.mouseButton.x, event.mouseButton.y), m_uiView);
+        aim.x = flipX(aim.x); // second half: un-mirror the click into internal pitch coords
 
         // Read-and-dive save: the first click commits the keeper's dive to that height.
         if (m_gkDiveMode && !m_gkDived && event.mouseButton.button == sf::Mouse::Left) {
@@ -450,7 +513,9 @@ void MatchScreen::handleInput(sf::RenderWindow& window, const sf::Event& event) 
     if (m_minigameActive && m_shotStage == ShotStage::Aiming) {
         sf::Mouse::Button drawBtn = (m_drawButton == 0) ? sf::Mouse::Left : sf::Mouse::Right;
         if (event.type == sf::Event::MouseMoved) {
-            addShotPathPoint(window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y), m_uiView));
+            sf::Vector2f pt = window.mapPixelToCoords(sf::Vector2i(event.mouseMove.x, event.mouseMove.y), m_uiView);
+            pt.x = flipX(pt.x); // second half: un-mirror into internal coords
+            addShotPathPoint(pt);
         } else if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == drawBtn) {
             if (m_shotPathLen < 18.f) {
                 m_shotStage = ShotStage::None; // just a click, no path drawn - abort
@@ -574,6 +639,61 @@ void MatchScreen::resolveQTE(const QTEResult& result) {
 void MatchScreen::update(sf::Time deltaTime) {
     if (!m_engine) return;
 
+    // Half-time: at 45' (once we're in open play, not mid-episode) blow the whistle and pause
+    // on the interval screen until the player starts the second half.
+    if (!m_halfTime && !m_secondHalf && m_engine->getMinute() >= 45
+        && m_engine->getState() == MatchState::Simulating
+        && m_visualState == VisualState::NormalPlay && !m_engine->hasLogs()) {
+        m_halfTime = true;
+        AudioManager::get().sfx("whistle_long");
+        // Freeze the board on 45:00 (the board-update block below is skipped during the pause).
+        m_displayTime = (float)m_engine->getMinute();
+        m_timeText.setString(std::to_string((int)m_displayTime) + ":00");
+    }
+    if (m_halfTime) return; // frozen until "Start Second Half"
+
+    // Goal: net sound + a crowd reaction (home fans celebrate if the home team scored, whistle
+    // if the away team did).
+    {
+        int hs = m_engine->getHomeScore(), as = m_engine->getAwayScore();
+        if (hs != m_prevHomeScore || as != m_prevAwayScore) {
+            bool homeScored = hs > m_prevHomeScore;
+            AudioManager::get().goalNet();
+            AudioManager::get().reaction(homeScored);
+            m_prevHomeScore = hs;
+            m_prevAwayScore = as;
+        }
+    }
+
+    // Ball-strike sound for everyone. Two signals feed it: the carrier changing (a pass/cross/
+    // shot released by whoever had it), and a ball-velocity spike (a strike WITHIN a script, e.g.
+    // a header off a cross, where the carrier index doesn't change). The user's own strikes also
+    // call kick() directly; a cooldown keeps them from doubling up.
+    // While the user is DRIBBLING the ball is glued to his feet (offset dir*12), so a sharp turn
+    // jumps that offset and looks like a strike - suppress the detectors until the ball is struck.
+    float dt = deltaTime.asSeconds();
+    if (m_kickCd > 0.f) m_kickCd -= dt;
+    sf::Vector2f curBall = m_visualBall.getPosition();
+    bool userHasBall = (m_pendingKind == MinigameActionKind::Shot || m_pendingKind == MinigameActionKind::Pass);
+    bool dribbling = m_minigameActive && userHasBall && !m_ballStruck && !m_shotCurveActive;
+
+    if (!dribbling) {
+        if (m_ballCarrierIdx != m_prevCarrier && m_prevCarrier >= 0 && m_kickCd <= 0.f) {
+            AudioManager::get().kick(); m_kickCd = 0.12f;
+        }
+        if (dt > 0.0001f) {
+            float spd = std::hypot(curBall.x - m_prevBallPos.x, curBall.y - m_prevBallPos.y) / dt;
+            if (spd > 520.f && spd < 6000.f && m_prevBallSpeed < 260.f && m_kickCd <= 0.f) {
+                AudioManager::get().kick(); m_kickCd = 0.12f;
+            }
+            m_prevBallSpeed = spd;
+        }
+    } else {
+        m_prevBallSpeed = 0.f; // so ending the dribble isn't itself misread as a spike
+    }
+    m_prevCarrier = m_ballCarrierIdx;
+    m_prevBallPos = curBall;
+
     // Watchdog: the engine minute should keep advancing. It's frozen during episodes/minigames
     // (fine, they're short), but if it hasn't moved for far longer than any of them can last,
     // something is stuck (a stranded episode, or a log that never popped in open play) - force
@@ -660,6 +780,11 @@ void MatchScreen::update(sf::Time deltaTime) {
         m_defDuel = m_stealHold = m_saveHold = m_gkDiveMode = false;
         m_shotCurveActive = m_ballStruck = false;
         m_visualState = VisualState::NormalPlay;
+        if (!m_fullTimeWhistled) {
+            AudioManager::get().sfx("whistle_long");
+            m_fullTimeWhistled = true;
+            LOG_INFO("Full time: " << m_engine->getHomeScore() << " - " << m_engine->getAwayScore());
+        }
         // Drain any trailing logs outright (FULL TIME, plus any un-shown chance/goal). There
         // is no more choreography to sync to.
         while (m_engine->hasLogs()) {
@@ -697,6 +822,7 @@ void MatchScreen::update(sf::Time deltaTime) {
         // below - which sent us to Beat::Shot and cheerfully animated the attacker
         // *shooting* after the whistle had gone. Restart from the spot instead.
         if (m_pendingEvent.type == EventType::Card || m_pendingEvent.type == EventType::Foul) {
+            if (m_pendingEvent.type == EventType::Card) AudioManager::get().sfx("card");
             m_engine->commitEvent(m_pendingEvent);
             m_visibleLogs.push_back(m_pendingEvent);
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
@@ -739,7 +865,16 @@ void MatchScreen::update(sf::Time deltaTime) {
             updateVisuals(deltaTime);
             return;
         }
-        if (m_pendingEvent.outcome == EventOutcome::PassGood || m_pendingEvent.outcome == EventOutcome::PassBad) {
+        if (m_pendingEvent.outcome == EventOutcome::PassBad) {
+            // A stray pass is cut out - the side that intercepted (m_pendingEvent.isHome) has won
+            // it, so give them a real possession spell driving forward, not an instant hand-back.
+            beginTurnoverPossession(m_pendingEvent.isHome);
+            m_visualState = VisualState::NormalPlay;
+            m_stateTimer = 0.f;
+            updateVisuals(deltaTime);
+            return;
+        }
+        if (m_pendingEvent.outcome == EventOutcome::PassGood) {
             m_visualState = VisualState::NormalPlay;
             m_stateTimer = 0.f;
             updateVisuals(deltaTime);
@@ -753,6 +888,8 @@ void MatchScreen::update(sf::Time deltaTime) {
         if (m_pendingEvent.outcome == EventOutcome::TackleLost) {
             m_visibleLogs.push_back(m_pendingEvent); // show "robbed of possession" in the ticker
             if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
+            // The side that won it keeps it and drives forward - a turnover with consequence.
+            beginTurnoverPossession(m_pendingEvent.isHome);
             m_visualState = VisualState::NormalPlay;
             m_stateTimer = 0.f;
             updateVisuals(deltaTime);
@@ -838,6 +975,7 @@ void MatchScreen::update(sf::Time deltaTime) {
                 if (m_visibleLogs.size() > 5) m_visibleLogs.erase(m_visibleLogs.begin());
 
                 if (m_pendingEvent.type == EventType::Card || m_pendingEvent.type == EventType::Foul) {
+                    if (m_pendingEvent.type == EventType::Card) AudioManager::get().sfx("card");
                     // Show the challenge, then settle into the dead ball. The ball used to
                     // just keep whatever velocity it had and sail off across the pitch.
                     beginFoul(m_pendingEvent.isHome);
@@ -985,6 +1123,7 @@ sf::Vector2f MatchScreen::shotPointAt(float dist) const {
 }
 
 void MatchScreen::launchDrawnShot() {
+    m_shotWideCalled = false; // fresh shot: allow one miss/post sound
     // Straight continuation = the OVERALL direction of the drawn stroke (start->end chord),
     // not the end tangent of the bowed arc. The arc's end tangent points sideways, opposite
     // the bow, so on a quick flick (short arc, long continuation) the ball shot off the other
@@ -1045,6 +1184,15 @@ void MatchScreen::launchDrawnShot() {
     m_lastToucherIdx = m_userIdx;
     m_pendingKind = MinigameActionKind::Shot;
     m_shotStage = ShotStage::None;
+
+    // Vertical variety so shots aren't all along the ground: most are driven fairly low, but a
+    // good share rise into the air (a dipping/rising effort). Purely visual - the arc peaks
+    // mid-flight and returns to the ground at the goal line, so goal/save detection is unchanged.
+    float base = 3.f + power01 * 6.f;                                   // 3..9 px, a driven strike
+    float loft = (rand() % 100 < 42) ? (14.f + (float)(rand() % 16)) : 0.f; // 42%: rise +14..30
+    m_shotArc = base + loft;
+
+    AudioManager::get().kick();
 }
 
 void MatchScreen::launchDrawnAction() {
@@ -1075,6 +1223,7 @@ void MatchScreen::launchDrawnPass() {
     m_lastToucherIdx = m_userIdx;
     m_pendingKind = MinigameActionKind::Pass;
     m_shotStage = ShotStage::None;
+    AudioManager::get().kick();
 }
 
 void MatchScreen::resolveDrawnPass(int receiver, bool intercepted) {
@@ -1984,6 +2133,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         if (m_keyDown) dir.y += 1.f;
         if (m_keyLeft) dir.x -= 1.f;
         if (m_keyRight) dir.x += 1.f;
+        if (m_secondHalf) dir.x = -dir.x; // ends are swapped on screen, so mirror horizontal input
         float len = std::hypot(dir.x, dir.y);
         bool moving = len > 0.f;
         if (moving) { dir.x /= len; dir.y /= len; } else { dir = m_userMoveDir; }
@@ -2061,6 +2211,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
     if (m_keyDown) moveInput.y += 1.f;
     if (m_keyLeft) moveInput.x -= 1.f;
     if (m_keyRight) moveInput.x += 1.f;
+    if (m_secondHalf) moveInput.x = -moveInput.x; // ends swapped on screen -> mirror horizontal input
     
     if (m_dashTimer > 0) m_dashTimer -= dt;
     if (m_dribbleBurst > 0.f) m_dribbleBurst -= dt;
@@ -2121,14 +2272,9 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         return;
     }
 
-    // Lofted pass visual: ball briefly "grows" mid-flight to sell the arc
-    if (m_ballLoftTimer > 0.f) {
-        m_ballLoftTimer -= dt;
-        float t = std::clamp(m_ballLoftTimer / 0.6f, 0.f, 1.f);
-        float scale = 1.f + std::sin(t * 3.14159f) * 0.6f;
-        m_visualBall.setScale(scale, scale);
-        if (m_ballLoftTimer <= 0.f) m_visualBall.setScale(1.f, 1.f);
-    }
+    // Lofted pass: the arc height is rendered by PitchRenderer::drawBall (see draw()); here we
+    // just run the timer down.
+    if (m_ballLoftTimer > 0.f) m_ballLoftTimer -= dt;
 
     // While a QTE is armed it is the sole authority on the outcome - the physics below
     // must not short-circuit it. Without this guard the ball (deflected off the frozen
@@ -2157,7 +2303,7 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
         if (nearGoal && idle && m_minigameTimer > 0.7f) {
             m_stealThief = oppBase;            // their keeper (local 0) comes off his line
             m_stealHold = true; m_stealHoldT = 0.f;
-        } else if ((idle && m_minigameTimer > 4.5f) || m_minigameTimer > 9.0f) {
+        } else if ((idle && m_minigameTimer > 1.8f) || m_minigameTimer > 9.0f) {
             int thief = -1; float best = 1e9f;
             for (int i = oppBase; i < oppBase + 11; ++i) {
                 if (i % 11 == 0 || hasRedCard(i)) continue; // an outfielder, not their keeper
@@ -2169,6 +2315,42 @@ void MatchScreen::updateMinigame(sf::Time deltaTime) {
             m_stealHold = true; m_stealHoldT = 0.f;
         }
         return;
+    }
+
+    // Goalpost collision: a struck shot that clips a post - the top of the mouth (y=250) or the
+    // bottom (y=330), on the goal line - cannons back into play off the woodwork, with the post
+    // sound. Handled before goal detection so a shot off the post is never counted as a goal.
+    if (m_pendingKind == MinigameActionKind::Shot && m_shotCurveActive) {
+        float goalLineX = m_engine->isHome() ? 840.f : 40.f;
+        bool atLine  = std::fabs(bPos.x - goalLineX) < 11.f;
+        float dTop = std::fabs(bPos.y - 250.f), dBot = std::fabs(bPos.y - 330.f);
+        if (atLine && (dTop < 7.f || dBot < 7.f)) {
+            AudioManager::get().sfx("post");
+            m_shotWideCalled = true;      // suppress the wide/miss sound below
+            m_shotCurveActive = false;    // hand the ball to physics for the rebound
+            m_ballStruck = true;          // a loose ball, not glued to anyone
+            m_ballFriction = 1.5f;
+            // Kick back off the post: away from the goal, and away from the mouth's centre
+            // (top post deflects up, bottom post down).
+            float outX = m_engine->isHome() ? -1.f : 1.f;
+            float outY = (dTop < dBot) ? -1.f : 1.f;
+            sf::Vector2f dir(outX, outY * 0.7f);
+            float dl = std::hypot(dir.x, dir.y);
+            dir.x /= dl; dir.y /= dl;
+            m_ballVelocity = dir * std::max(m_shotFlightSpeed * 0.55f, 240.f);
+            return; // let the rebound play out from next frame; don't run goal detection now
+        }
+    }
+
+    // Missed shot (wide/over, not off a post): play the miss cue once as it crosses the line
+    // outside the mouth. (Post hits are handled above; on-target shots fall through to goal/save.)
+    if (m_pendingKind == MinigameActionKind::Shot && !m_shotWideCalled) {
+        bool crossed = m_engine->isHome() ? (bPos.x > 830.f) : (bPos.x < 50.f);
+        bool inMouth = (bPos.y > 250.f && bPos.y < 330.f);
+        if (crossed && !inMouth) {
+            m_shotWideCalled = true;
+            AudioManager::get().sfx("miss");
+        }
     }
 
     // Goal detection (a drawn pass is resolved at its receiver, never as a goal).
@@ -2318,21 +2500,53 @@ void MatchScreen::draw(sf::RenderWindow& window) {
     else if (p->position == PlayerPosition::Midfielder) userPosIdx = 7;
     else if (p->position == PlayerPosition::Forward) userPosIdx = 10;
 
+    auto& pfont = AssetManager::get().getFont("MainFont");
     for (size_t i = 0; i < m_dots.size(); ++i) {
         int localIdx = (int)i % 11;
         bool visible = !hasRedCard(i) || (int)i == m_sendOffGraceIdx;
         bool isUser = (m_dots[i].isHome == m_engine->isHome() && localIdx == userPosIdx
                        && !m_engine->isUserSubbedOff());
-        if (visible)
-            PitchRenderer::drawDot(window, m_dots[i].shape.getPosition() + sf::Vector2f(6.f, 6.f),
-                                   m_dots[i].isHome, isUser);
+        if (visible) {
+            bool keeper = (localIdx == 0);
+            sf::Color shirt = m_dots[i].isHome ? (keeper ? m_homeKeeperShirt : m_homeShirt)
+                                               : (keeper ? m_awayKeeperShirt : m_awayShirt);
+            sf::Vector2f c = m_dots[i].shape.getPosition() + sf::Vector2f(6.f, 6.f);
+            c.x = flipX(c.x); // switch ends in the second half
+            PitchRenderer::drawPlayer(window, (int)i, c, shirt, isUser, localIdx + 1, &pfont);
+        }
     }
-    PitchRenderer::drawBall(window, m_visualBall.getPosition() + sf::Vector2f(4.f, 4.f));
+    {
+        sf::Vector2f bc = m_visualBall.getPosition() + sf::Vector2f(4.f, 4.f);
+        bc.x = flipX(bc.x);
+        // Ball height for aerial balls (#5): a parabola over the flight of a lofted pass, whether
+        // drawn (curve flight) or played through the QTE (loft timer).
+        float ballH = 0.f;
+        if (m_shotCurveActive && m_pendingKind == MinigameActionKind::Shot) {
+            // A struck shot rises on its own per-shot arc (m_shotArc), back to the ground at goal.
+            float t = std::clamp(m_shotPathLen > 1.f ? m_shotFlightDist / m_shotPathLen : 0.f, 0.f, 1.f);
+            ballH = std::sin(t * 3.14159265f) * m_shotArc;
+        } else if (m_shotCurveActive && m_pendingVariant == ActionVariant::Lofted) {
+            float t = std::clamp(m_shotPathLen > 1.f ? m_shotFlightDist / m_shotPathLen : 0.f, 0.f, 1.f);
+            ballH = std::sin(t * 3.14159265f) * 26.f;
+        } else if (m_ballLoftTimer > 0.f) {
+            float t = std::clamp(1.f - m_ballLoftTimer / 0.6f, 0.f, 1.f);
+            ballH = std::sin(t * 3.14159265f) * 26.f;
+        } else if (m_ballAirborne && m_ballAirLen > 1.f) {
+            // Parabola over a long un-carried delivery (cross / long ball / goal kick).
+            float dist = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x,
+                                    m_ballTarget.y - m_visualBall.getPosition().y);
+            float t = std::clamp((m_ballAirLen - dist) / m_ballAirLen, 0.f, 1.f);
+            float peak = std::clamp(m_ballAirLen * 0.16f, 14.f, 42.f);
+            ballH = std::sin(t * 3.14159265f) * peak;
+        }
+        PitchRenderer::drawBall(window, bc, ballH);
+    }
 
     // Read-and-dive save: highlight the goal mouth the keeper is defending so the two dive
     // halves read clearly. It shows the target area, never where the shot is going.
     if (m_gkDiveMode) {
         float gx = (m_gkGoalLineX < 440.f) ? 40.f : 810.f;
+        if (m_secondHalf) gx = 880.f - gx - 30.f; // mirror the goal mouth with the pitch
         sf::RectangleShape mouth(sf::Vector2f(30.f, 80.f));
         mouth.setPosition(gx, 250.f);
         mouth.setFillColor(sf::Color(80, 160, 255, 45));
@@ -2353,7 +2567,13 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         // Yellow for a shot, cyan for a pass, so it's obvious which you're playing.
         sf::Color col = (m_drawKind == MinigameActionKind::Pass) ? sf::Color(90, 210, 255, a)
                                                                  : sf::Color(255, 230, 90, a);
-        PitchRenderer::drawPath(window, m_shotPath, col);
+        if (m_secondHalf) {
+            std::vector<sf::Vector2f> mirrored = m_shotPath;
+            for (auto& pt : mirrored) pt.x = flipX(pt.x);
+            PitchRenderer::drawPath(window, mirrored, col);
+        } else {
+            PitchRenderer::drawPath(window, m_shotPath, col);
+        }
     }
 
     window.setView(m_uiView);
@@ -2493,5 +2713,46 @@ void MatchScreen::draw(sf::RenderWindow& window) {
         hint.setPosition(440.f, 620.f);
         window.draw(hint);
         m_qte.draw(window, sf::Vector2f(440.f, 665.f));
+    }
+
+    // Half-time interval overlay: dim the pitch, show the score + first-half stats and a button.
+    if (m_halfTime) {
+        auto& font = AssetManager::get().getFont("MainFont");
+        sf::RectangleShape dim(sf::Vector2f(1280.f, 720.f));
+        dim.setFillColor(sf::Color(8, 12, 22, 210));
+        window.draw(dim);
+
+        UIKit::drawPanel(window, {390.f, 150.f, 500.f, 300.f});
+
+        auto ctext = [&](float y, const std::string& s, unsigned sz, sf::Color c, bool bold = false) {
+            float w = UIKit::crispText(font, s, sz).getGlobalBounds().width;
+            UIKit::drawText(window, font, {640.f - w * 0.5f, y}, s, sz, c, 1.0f, bold);
+        };
+        ctext(172.f, "HALF TIME", 16, UITheme::Accent, true);
+
+        const MatchStats& home = m_engine->isHome() ? m_engine->getPlayerTeamStats() : m_engine->getOpponentTeamStats();
+        const MatchStats& away = m_engine->isHome() ? m_engine->getOpponentTeamStats() : m_engine->getPlayerTeamStats();
+        std::string hn = m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
+        std::string an = !m_engine->isHome() ? m_engine->getPlayerClub()->name : m_engine->getOpponentClub()->name;
+        ctext(206.f, hn + "  " + std::to_string(home.goals) + " - " + std::to_string(away.goals) + "  " + an, 26, UITheme::TextWhite, true);
+
+        float y = 272.f;
+        auto stat = [&](const std::string& label, int h, int a) {
+            UIKit::drawText(window, font, {430.f, y}, std::to_string(h), 18,
+                            h >= a ? UITheme::TextWhite : UITheme::TextDim, 1.0f, true);
+            float lw = UIKit::crispText(font, label, 15).getGlobalBounds().width;
+            UIKit::drawText(window, font, {640.f - lw * 0.5f, y + 1.f}, label, 15, UITheme::Accent, 1.2f, true);
+            UIKit::drawText(window, font, {820.f, y}, std::to_string(a), 18,
+                            a >= h ? UITheme::TextWhite : UITheme::TextDim, 1.0f, true);
+            y += 34.f;
+        };
+        stat("SHOTS", home.shots, away.shots);
+        stat("YELLOW CARDS", home.yellowCards, away.yellowCards);
+        stat("RED CARDS", home.redCards, away.redCards);
+
+        UIKit::BtnState st = m_secondHalfBtn.contains(
+            window.mapPixelToCoords(sf::Mouse::getPosition(window), m_uiView)) ? UIKit::BtnState::Hover
+                                                                              : UIKit::BtnState::Normal;
+        UIKit::drawButton(window, font, m_secondHalfBtn, "Start 2nd Half", st);
     }
 }

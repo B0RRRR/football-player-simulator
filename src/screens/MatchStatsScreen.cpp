@@ -71,6 +71,7 @@ void MatchStatsScreen::init() {
                         m.homeGoalsLeg1 = isHomeLeg ? home.goals : away.goals;
                         m.awayGoalsLeg1 = isHomeLeg ? away.goals : home.goals;
                         m.leg1Played = true;
+                        m.leg1Date = m_gameManager->getCareerManager()->dateString();
                         m.winner = (home.goals > away.goals) ? hc : ((away.goals > home.goals) ? ac : nullptr);
                         if (!m.winner) {
                             m.homePenalties = 4 + rand() % 2;
@@ -95,6 +96,7 @@ void MatchStatsScreen::init() {
                         m.homeGoalsLeg1 = isHomeLeg ? home.goals : away.goals;
                         m.awayGoalsLeg1 = isHomeLeg ? away.goals : home.goals;
                         m.leg1Played = true;
+                        m.leg1Date = m_gameManager->getCareerManager()->dateString();
                         if (m.isFinal) {
                             m.winner = (home.goals > away.goals) ? hc : ((away.goals > home.goals) ? ac : nullptr);
                             if (!m.winner) m.winner = (rand() % 2 == 0) ? hc : ac;
@@ -103,6 +105,7 @@ void MatchStatsScreen::init() {
                         m.homeGoalsLeg2 = isHomeLeg ? home.goals : away.goals;
                         m.awayGoalsLeg2 = isHomeLeg ? away.goals : home.goals;
                         m.leg2Played = true;
+                        m.leg2Date = m_gameManager->getCareerManager()->dateString();
                         int aggHome = m.homeGoalsLeg1 + m.homeGoalsLeg2;
                         int aggAway = m.awayGoalsLeg1 + m.awayGoalsLeg2;
                         if (aggHome > aggAway) m.winner = m.home;
@@ -123,9 +126,12 @@ void MatchStatsScreen::init() {
     } else {
         hc->goalsFor += home.goals; hc->goalsAgainst += away.goals;
         ac->goalsFor += away.goals; ac->goalsAgainst += home.goals;
-        if (home.goals > away.goals)      { hc->points += 3; hc->wins++;  ac->losses++; }
-        else if (away.goals > home.goals) { ac->points += 3; ac->wins++;  hc->losses++; }
-        else                              { hc->points += 1; hc->draws++; ac->points += 1; ac->draws++; }
+        if (home.goals > away.goals)      { hc->points += 3; hc->wins++;  ac->losses++;
+            hc->recordResult('W'); ac->recordResult('L'); }
+        else if (away.goals > home.goals) { ac->points += 3; ac->wins++;  hc->losses++;
+            ac->recordResult('W'); hc->recordResult('L'); }
+        else                              { hc->points += 1; hc->draws++; ac->points += 1; ac->draws++;
+            hc->recordResult('D'); ac->recordResult('D'); }
     }
 }
 

@@ -34,11 +34,13 @@ namespace ShotPath {
             float off = (pt.x - p0.x) * perp.x + (pt.y - p0.y) * perp.y;
             if (std::fabs(off) > std::fabs(bestOff)) bestOff = off;
         }
-        float maxOff = std::min(120.f, L * 0.6f);
+        // Cap the bow and ease it back a touch so a hard-drawn flick doesn't fly on an
+        // exaggerated banana - a gentler, more plausible curve.
+        float maxOff = std::min(90.f, L * 0.5f);
         bestOff = std::clamp(bestOff, -maxOff, maxOff);
 
         sf::Vector2f mid = (p0 + p2) * 0.5f;
-        sf::Vector2f p1 = mid + perp * (bestOff * 2.f);
+        sf::Vector2f p1 = mid + perp * (bestOff * 1.7f);
 
         std::vector<sf::Vector2f> out;
         const int N = 20;

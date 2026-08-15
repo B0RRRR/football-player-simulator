@@ -241,6 +241,7 @@ void Database::resetStats() {
             club.losses = 0;
             club.goalsFor = 0;
             club.goalsAgainst = 0;
+            club.form.clear();
         }
     }
 }

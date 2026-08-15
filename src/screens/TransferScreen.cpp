@@ -1,5 +1,6 @@
 #include "UITheme.h"
 #include "UIKit.h"
+#include "AudioManager.h"
 #include "TransferScreen.h"
 #include "CareerHubScreen.h"
 #include "GameManager.h"
@@ -113,23 +114,28 @@ void TransferScreen::attemptTransfer(Club* targetClub) {
     if (!targetClub) return;
     Player* p = m_gameManager->getPlayer();
     if (p->currentClub && targetClub->name == p->currentClub->name) {
-        m_messageStr = "You already play for " + targetClub->name + "!"; m_messageTimer = 3.0f; return;
+        m_messageStr = "You already play for " + targetClub->name + "!"; m_messageTimer = 3.0f;
+        AudioManager::get().sfx("deny"); return;
     }
     int targetStrength = p->positionalRating() + ((p->goals + p->assists) / 5);
     int diff = targetStrength - targetClub->strength;
     if (diff < -8) {
         m_messageStr = "Refused! " + targetClub->name + " thinks you're not good enough."; m_messageTimer = 4.0f;
+        AudioManager::get().sfx("deny");
     } else if (diff > 20) {
         m_messageStr = "Refused! " + targetClub->name + " cannot afford your wages."; m_messageTimer = 4.0f;
+        AudioManager::get().sfx("deny");
     } else {
         for (const auto& off : m_offers)
             if (off.club->name == targetClub->name) {
-                m_messageStr = "You already have an offer from " + targetClub->name + "!"; m_messageTimer = 3.0f; return;
+                m_messageStr = "You already have an offer from " + targetClub->name + "!"; m_messageTimer = 3.0f;
+                AudioManager::get().sfx("deny"); return;
             }
         int salary = targetClub->strength * 50 + (rand() % 1000);
         if (p->isTransferListed) salary = (int)(salary * 0.9f);
         m_offers.push_back({targetClub, salary});
         m_messageStr = "Success! " + targetClub->name + " sent an offer to your inbox."; m_messageTimer = 4.0f;
+        AudioManager::get().sfx("confirm");
     }
 }
 
@@ -149,6 +155,7 @@ void TransferScreen::dispatch(const Click& c) {
         p->salary = c.offer.offeredSalary;
         p->coachTrust = 50.0f;
         p->isTransferListed = false;
+        AudioManager::get().sfx("confirm"); // transfer accepted
         m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
     }
 }

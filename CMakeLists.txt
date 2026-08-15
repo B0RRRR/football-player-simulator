@@ -36,6 +36,7 @@ set(SOURCES
     src/core/PlatformDisplay.cpp
     src/core/SaveManager.cpp
     src/core/AudioManager.cpp
+    src/core/Logger.cpp
     
     src/models/Player.cpp
     src/models/Database.cpp
@@ -61,6 +62,7 @@ set(SOURCES
     src/screens/SquadScreen.cpp
     src/screens/TransferScreen.cpp
     src/screens/EuropeanCupScreen.cpp
+    src/screens/MatchPreviewScreen.cpp
     src/screens/MatchScreen.cpp
     src/screens/MatchScreenEpisodes.cpp
     src/screens/DrillArena.cpp
@@ -73,6 +75,11 @@ add_executable(football_sim ${SOURCES})
 
 # Link SFML libraries
 target_link_libraries(football_sim sfml-graphics sfml-window sfml-system sfml-audio)
+
+# Export symbols so the crash-handler backtrace shows function names (Logger.cpp / backtrace).
+if(UNIX AND NOT APPLE)
+    target_link_options(football_sim PRIVATE -rdynamic)
+endif()
 
 # Linux: query exact per-monitor bounds via XRandR so borderless fullscreen lands on a single
 # monitor even when monitors differ in size (SFML 2.x has no multi-monitor API of its own).

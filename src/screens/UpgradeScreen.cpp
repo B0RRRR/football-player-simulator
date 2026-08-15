@@ -1,5 +1,6 @@
 #include "UITheme.h"
 #include "UIKit.h"
+#include "AudioManager.h"
 #include "UpgradeScreen.h"
 #include "CareerHubScreen.h"
 #include "AssetManager.h"
@@ -40,7 +41,9 @@ void UpgradeScreen::dispatch(const std::string& action) {
     if (!p) return;
     auto buy = [&](int& stat) {
         int cost = stat * 5;
-        if (p->experience >= cost && stat < p->potential) { p->experience -= cost; stat++; }
+        bool ok = (p->experience >= cost && stat < p->potential);
+        if (ok) { p->experience -= cost; stat++; }
+        AudioManager::get().sfx(ok ? "confirm" : "deny");
     };
     if (action == "Back")            m_gameManager->changeScreen(std::make_shared<CareerHubScreen>());
     else if (action == "Shooting")    buy(p->shooting);
@@ -56,9 +59,11 @@ void UpgradeScreen::dispatch(const std::string& action) {
             if (p->usesTackling()    && p->tackling    < p->potential) p->tackling++;
             if (p->usesDribbling()   && p->dribbling   < p->potential) p->dribbling++;
             if (p->usesGoalkeeping() && p->goalkeeping < p->potential) p->goalkeeping++;
-        }
+            AudioManager::get().sfx("confirm");
+        } else AudioManager::get().sfx("deny");
     } else if (action == "Car") {
-        if (p->money >= 20000) { p->money -= 20000; p->morale = std::min(100, p->morale + 50); }
+        if (p->money >= 20000) { p->money -= 20000; p->morale = std::min(100, p->morale + 50); AudioManager::get().sfx("confirm"); }
+        else AudioManager::get().sfx("deny");
     }
 }
 

@@ -23,6 +23,11 @@ public:
     void update(sf::Time deltaTime) override;
     void draw(sf::RenderWindow& window) override;
     bool playsClickOnPress() const override { return false; } // drill drives its own audio
+    // Training fades the menu music out and runs the stadium ambience (intershum) - but there are
+    // no fans at a training session, so crowd reactions (celebration/whistle) never fire here: the
+    // drill simply never calls AudioManager::reaction(), unlike a real match.
+    bool wantsMenuMusic() const override { return false; }
+    bool wantsMatchAmbience() const override { return false; } // no crowd/intershum at training
 
 private:
     void initGame();

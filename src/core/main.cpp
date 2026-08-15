@@ -1,5 +1,6 @@
 #include "GameManager.h"
 #include "MenuScreen.h"
+#include "Logger.h"
 #include <memory>
 #include <iostream>
 #include <cstdlib>
@@ -13,6 +14,10 @@ int main()
     setenv("PULSE_LATENCY_MSEC", "120", 0);
 #endif
 
+    Log::init("game.log");
+    Log::installCrashHandlers();
+    LOG_INFO("Football Player Simulator starting up");
+
     try {
         GameManager game;
 
@@ -23,9 +28,14 @@ int main()
         game.run();
     }
     catch (const std::exception& e) {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
+        LOG_ERROR("Fatal exception: " << e.what());
+        return 1;
+    }
+    catch (...) {
+        LOG_ERROR("Fatal unknown exception");
         return 1;
     }
 
+    LOG_INFO("Clean shutdown");
     return 0;
 }

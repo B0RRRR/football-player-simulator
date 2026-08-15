@@ -2,6 +2,8 @@
 #include "Settings.h"
 #include "AssetManager.h"
 #include "AudioManager.h"
+#include "Logger.h"
+#include <typeinfo>
 #include "PlatformDisplay.h"
 #include <iostream>
 
@@ -14,6 +16,9 @@ GameManager::GameManager()
     m_careerManager = std::make_unique<CareerManager>(this);
 
     applyVideoMode();
+    LOG_INFO("Video: " << (g_settings.isFullscreen ? "fullscreen" : "windowed") << " "
+             << m_window.getSize().x << "x" << m_window.getSize().y
+             << ", difficulty=" << g_settings.difficulty << ", matchSpeed=" << g_settings.matchSpeed);
 
     // Load global assets here
     AssetManager::get().loadFont("MainFont", "assets/fonts/Roboto-Regular.ttf");
@@ -40,6 +45,10 @@ void GameManager::applyVideoMode() {
 
     sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
 
+    // Multisampling smooths every shape edge (circles, rounded panels) across the whole UI.
+    sf::ContextSettings ctx;
+    ctx.antialiasingLevel = 8;
+
     if (g_settings.isFullscreen) {
         // Borderless windowed "fullscreen" on exactly the monitor the window is on. Style::None
         // doesn't change the video mode (no stretching); XRandR gives that monitor's real bounds
@@ -50,11 +59,11 @@ void GameManager::applyVideoMode() {
         if (Platform::monitorContaining(cx, cy, mx, my, mw, mh)) {
             fx = mx; fy = my; fw = (unsigned)mw; fh = (unsigned)mh;
         }
-        m_window.create(sf::VideoMode(fw, fh), "Football Career Simulator", sf::Style::None);
+        m_window.create(sf::VideoMode(fw, fh), "Football Career Simulator", sf::Style::None, ctx);
         m_window.setPosition({fx, fy});
     } else {
         m_window.create(sf::VideoMode(g_settings.resWidth, g_settings.resHeight),
-                        "Football Career Simulator", sf::Style::Default);
+                        "Football Career Simulator", sf::Style::Default, ctx);
         if (hadWindow) {
             // Keep the windowed window on the same monitor, near its top-left.
             int wx = 60, wy = 60;
@@ -90,13 +99,15 @@ void GameManager::applyLetterbox(unsigned winW, unsigned winH) {
 
 void GameManager::changeScreen(std::shared_ptr<Screen> screen) {
     if (screen) {
+        LOG_INFO("Screen -> " << Log::demangle(typeid(*screen).name()));
         m_pendingScreen = screen;
     }
 }
 
 void GameManager::run() {
     sf::Clock clock;
-    
+    bool focused = true; // track focus so we don't touch GL while minimised (assume focused at start)
+
     while (m_window.isOpen()) {
         if (m_pendingVideoApply) {
             m_pendingVideoApply = false;
@@ -121,6 +132,8 @@ void GameManager::run() {
             if (event.type == sf::Event::Closed) {
                 m_window.close();
             }
+            if (event.type == sf::Event::LostFocus)   focused = false;
+            if (event.type == sf::Event::GainedFocus) focused = true;
             if (event.type == sf::Event::Resized) {
                 applyLetterbox(event.size.width, event.size.height);
             }
@@ -129,7 +142,7 @@ void GameManager::run() {
             if (event.type == sf::Event::MouseButtonPressed
                 && event.mouseButton.button == sf::Mouse::Left
                 && m_currentScreen && m_currentScreen->playsClickOnPress()) {
-                AudioManager::get().sfx("ui_click");
+                AudioManager::get().sfx("click");
             }
 
             if (m_currentScreen) {
@@ -139,18 +152,26 @@ void GameManager::run() {
         
         // Update logic
         AudioManager::get().setMusicEnabled(!m_currentScreen || m_currentScreen->wantsMenuMusic());
-        AudioManager::get().update(); // rotate the music playlist when a track finishes
+        AudioManager::get().setAmbienceEnabled(m_currentScreen && m_currentScreen->wantsMatchAmbience());
+        AudioManager::get().update(deltaTime.asSeconds()); // playlists + ambience/reaction fades
         if (m_currentScreen) {
             m_currentScreen->update(deltaTime);
         }
         
-        // Draw
-        m_window.clear(sf::Color::Black);
-        
-        if (m_currentScreen) {
-            m_currentScreen->draw(m_window);
+        // Draw. While the window is minimised/unfocused (or reports a zero-size surface, as it
+        // does when minimised), skip all GL work: on some backends (notably WSLg) swapping buffers
+        // on a hidden surface blocks indefinitely, which froze the whole app - the loop never got
+        // back to poll the close/restore events. We keep polling events and updating audio above,
+        // and just sleep here so it stays responsive and can be restored or closed.
+        sf::Vector2u ws = m_window.getSize();
+        if (focused && ws.x > 0 && ws.y > 0) {
+            m_window.clear(sf::Color::Black);
+            if (m_currentScreen) {
+                m_currentScreen->draw(m_window);
+            }
+            m_window.display();
+        } else {
+            sf::sleep(sf::milliseconds(32)); // no GL while hidden; don't busy-spin either
         }
-        
-        m_window.display();
     }
 }

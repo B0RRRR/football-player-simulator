@@ -2,6 +2,7 @@
 #include "UIKit.h"
 #include "CareerHubScreen.h"
 #include "MatchScreen.h"
+#include "MatchPreviewScreen.h"
 #include "MenuScreen.h"
 #include "UpgradeScreen.h"
 #include "LeagueTableScreen.h"
@@ -127,12 +128,12 @@ void CareerHubScreen::dispatch(sf::RenderWindow& window, const std::string& acti
         }
         if (cm->isSummerBreak()) {
             if (cm->hasInternationalMatchToday())
-                m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+                m_gameManager->changeScreen(std::make_shared<MatchPreviewScreen>());
             else cm->advanceDay();
         } else if (cm->hasEuropeanMatchToday()) {
-            m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+            m_gameManager->changeScreen(std::make_shared<MatchPreviewScreen>());
         } else if (cm->getDayType() == CalendarDayType::Match) {
-            m_gameManager->changeScreen(std::make_shared<MatchScreen>());
+            m_gameManager->changeScreen(std::make_shared<MatchPreviewScreen>());
         } else if (cm->getDayType() == CalendarDayType::Training) {
             m_gameManager->changeScreen(std::make_shared<TrainingScreen>());
         } else {

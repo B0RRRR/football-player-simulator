@@ -1,0 +1,14 @@
+[17:59:59] INFO  ==== session start ====
+[17:59:59] INFO  Football Player Simulator starting up
+[17:59:59] INFO  Video: windowed 1280x720, difficulty=1, matchSpeed=1
+[17:59:59] INFO  Audio: loaded 24 sfx buffers (10 ball-strike variants)
+[17:59:59] INFO  Screen -> MenuScreen
+[18:00:02] INFO  Screen -> CareerHubScreen
+[18:00:03] INFO  Screen -> MatchPreviewScreen
+[18:00:04] INFO  Screen -> MatchScreen
+[18:00:04] INFO  Match kick-off: Grenoble Foot vs Pau (user home)
+[18:01:35] INFO  Screen -> MatchStatsScreen
+[18:01:35] INFO  Full time: 4 - 3
+[18:01:36] INFO  Advance day: day=5 week=0 type=League Match
+[18:01:36] INFO  Screen -> CareerHubScreen
+[18:02:01] INFO  Clean shutdown

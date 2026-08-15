@@ -2,6 +2,7 @@
 #include "GameManager.h"
 #include "Player.h"
 #include "SaveManager.h"
+#include "Logger.h"
 #include <cstdlib>
 #include <iostream>
 #include <algorithm>
@@ -296,6 +297,52 @@ bool CareerManager::isHomeInternationalMatch() const {
     return true;
 }
 
+// Walk an "August is month 0" calendar: turn a days-from-Aug-1 offset into day-of-month + month.
+static void calendarOf(int offset, int& dayOfMonth, int& monthIndex) {
+    static const int daysInMonth[] = {31, 30, 31, 30, 31, 31, 28, 31, 30, 31, 30, 31};
+    if (offset < 0) offset = 0;
+    monthIndex = 0;
+    while (offset >= daysInMonth[monthIndex]) {
+        offset -= daysInMonth[monthIndex];
+        if (++monthIndex >= 12) { monthIndex = 11; offset = daysInMonth[11] - 1; break; }
+    }
+    dayOfMonth = offset + 1;
+}
+
+static std::string monthName(int monthIndex) {
+    static const char* months[] = {"Aug", "Sep", "Oct", "Nov", "Dec", "Jan",
+                                   "Feb", "Mar", "Apr", "May", "Jun", "Jul"};
+    return months[monthIndex];
+}
+
+std::string CareerManager::dateString(bool withYear) const {
+    // Same calendar the Hub header uses: the season runs August -> July, so month 0 is August.
+    int offset = m_isSummerBreak ? (304 + m_summerDay - 1) : (m_day - 1);
+    int d, mi; calendarOf(offset, d, mi);
+    int year = m_isSummerBreak ? m_year : (mi >= 5 ? m_year + 1 : m_year);
+    std::string s = std::to_string(d) + " " + monthName(mi);
+    if (withYear) s += " " + std::to_string(year);
+    return s;
+}
+
+std::string CareerManager::dateStringForDay(int day, bool withYear) const {
+    int d, mi; calendarOf(day - 1, d, mi);
+    int year = (mi >= 5) ? m_year + 1 : m_year;
+    std::string s = std::to_string(d) + " " + monthName(mi);
+    if (withYear) s += " " + std::to_string(year);
+    return s;
+}
+
+std::string CareerManager::europeanRoundDate(int roundIndex, bool secondLeg) const {
+    // The fixed weekly schedule mirrored from hasEuropeanMatchToday(): R16, QF, SF are two-legged
+    // (weeks a/b), the Final is a single match. Matches play on day 3 of the week (m_day = week*7+3).
+    static const int legWeeks[4][2] = {{10, 12}, {20, 22}, {30, 32}, {36, -1}};
+    if (roundIndex < 0 || roundIndex > 3) return "";
+    int week = legWeeks[roundIndex][secondLeg ? 1 : 0];
+    if (week < 0) return "";
+    return dateStringForDay(week * 7 + 3);
+}
+
 void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
     auto simMatches = [this, simulatePlayerClub](Tournament& t) {
         if (t.isFinished || t.currentRoundIndex >= t.rounds.size()) return;
@@ -317,6 +364,7 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
                 if (homeStr > awayStr + 5) m.homeGoalsLeg1++;
                 if (awayStr > homeStr + 5) m.awayGoalsLeg1++;
                 m.leg1Played = true;
+                m.leg1Date = dateString();
                 
                 distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
                 distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
@@ -343,6 +391,7 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
                 if (homeStr > awayStr + 5) m.homeGoalsLeg2++;
                 if (awayStr > homeStr + 5) m.awayGoalsLeg2++;
                 m.leg2Played = true;
+                m.leg2Date = dateString();
                 
                 distributeGoalsToRoster(m.home, m.homeGoalsLeg2);
                 distributeGoalsToRoster(m.away, m.awayGoalsLeg2);
@@ -372,7 +421,9 @@ void CareerManager::simulateEuropeanMatches(bool simulatePlayerClub) {
 
 void CareerManager::advanceDay(bool simulatePlayerClub, bool autoSave) {
     Player* p = m_gameManager->getPlayer();
-    
+    LOG_INFO("Advance day: day=" << m_day << " week=" << (p ? p->weeksPlayed : -1)
+             << " type=" << getDayTypeString() << (m_isSummerBreak ? " [summer]" : ""));
+
     if (m_isSummerBreak) {
         m_summerDay++;
         
@@ -460,6 +511,7 @@ void CareerManager::skipSeason() {
                                 m.homeGoalsLeg1 = isHomeLeg ? hg : ag;
                                 m.awayGoalsLeg1 = isHomeLeg ? ag : hg;
                                 m.leg1Played = true;
+                                m.leg1Date = dateString();
                                 
                                 distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
                                 distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
@@ -480,6 +532,7 @@ void CareerManager::skipSeason() {
                                 m.homeGoalsLeg2 = isHomeLeg ? hg : ag;
                                 m.awayGoalsLeg2 = isHomeLeg ? ag : hg;
                                 m.leg2Played = true;
+                                m.leg2Date = dateString();
                                 
                                 distributeGoalsToRoster(m.home, m.homeGoalsLeg2);
                                 distributeGoalsToRoster(m.away, m.awayGoalsLeg2);
@@ -537,9 +590,12 @@ void CareerManager::skipSeason() {
                 updateAITeamMatchStats(p->currentClub);
                 updateAITeamMatchStats(opp);
                 
-                if (hg > ag) { p->currentClub->points += 3; p->currentClub->wins++; opp->losses++; }
-                else if (ag > hg) { opp->points += 3; opp->wins++; p->currentClub->losses++; }
-                else { p->currentClub->points += 1; p->currentClub->draws++; opp->points += 1; opp->draws++; }
+                if (hg > ag) { p->currentClub->points += 3; p->currentClub->wins++; opp->losses++;
+                    p->currentClub->recordResult('W'); opp->recordResult('L'); }
+                else if (ag > hg) { opp->points += 3; opp->wins++; p->currentClub->losses++;
+                    opp->recordResult('W'); p->currentClub->recordResult('L'); }
+                else { p->currentClub->points += 1; p->currentClub->draws++; opp->points += 1; opp->draws++;
+                    p->currentClub->recordResult('D'); opp->recordResult('D'); }
                 
                 float simRating = 5.0f + (rand() % 50) / 10.0f;
                 p->totalSeasonRating += simRating;
@@ -629,10 +685,13 @@ void CareerManager::simulateMatchweek(bool simulatePlayerClub) {
                 
                 if (g1 > g2) {
                     c1->points += 3; c1->wins++; c2->losses++;
+                    c1->recordResult('W'); c2->recordResult('L');
                 } else if (g2 > g1) {
                     c2->points += 3; c2->wins++; c1->losses++;
+                    c2->recordResult('W'); c1->recordResult('L');
                 } else {
                     c1->points += 1; c1->draws++; c2->points += 1; c2->draws++;
+                    c1->recordResult('D'); c2->recordResult('D');
                 }
             }
         }
@@ -809,7 +868,8 @@ void CareerManager::simulateInternationalMatches(bool simulatePlayerClub) {
             if (homeStr > awayStr + 5) m.homeGoalsLeg1++;
             if (awayStr > homeStr + 5) m.awayGoalsLeg1++;
             m.leg1Played = true;
-            
+            m.leg1Date = dateString();
+
             distributeGoalsToRoster(m.home, m.homeGoalsLeg1);
             distributeGoalsToRoster(m.away, m.awayGoalsLeg1);
             updateAITeamMatchStats(m.home);

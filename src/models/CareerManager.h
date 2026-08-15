@@ -29,6 +29,13 @@ public:
     void setCurrentDay(int d) { m_day = d; }
     CalendarDayType getDayType() const;
     std::string getDayTypeString() const;
+    // Today's calendar date, e.g. "12 Nov 2024" (or "12 Nov" when withYear is false).
+    std::string dateString(bool withYear = true) const;
+    // Format an arbitrary club-season day (1-based) on the same calendar.
+    std::string dateStringForDay(int day, bool withYear = true) const;
+    // Planned date of a European cup round's leg (roundIndex 0=R16..3=Final), known before it's
+    // played from the fixed fixture schedule. Empty for a leg that doesn't exist (Final leg 2).
+    std::string europeanRoundDate(int roundIndex, bool secondLeg) const;
     
     bool hasEuropeanMatchToday() const;
     Club* getTodayOpponent() const;

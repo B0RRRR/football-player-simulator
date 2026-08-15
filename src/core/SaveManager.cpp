@@ -1,12 +1,32 @@
 #include "SaveManager.h"
 #include "json.hpp"
+#include "Logger.h"
 #include "Player.h"
 #include "CareerManager.h"
 #include "Database.h"
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <string>
 
 using json = nlohmann::json;
+
+// A signature over the whole save (FNV-1a + a salt). Any manual edit changes the content, so the
+// recomputed signature no longer matches and the save is rejected on load - you can't hand out
+// yourself 5000 in every stat by editing the file. (Not cryptographically strong - it just makes
+// casual save-editing not work.)
+static std::string saveSig(const json& withoutSig) {
+    static const std::string SALT = "fps.save.v1.$9wK2r7QxZ";
+    std::string s = withoutSig.dump();
+    s += SALT;
+    uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : s) { h ^= (uint64_t)c; h *= 1099511628211ULL; }
+    char buf[17];
+    std::snprintf(buf, sizeof(buf), "%016llx", (unsigned long long)h);
+    return std::string(buf);
+}
 
 static json serializeTournament(const Tournament& t) {
     json jt = {
@@ -35,6 +55,8 @@ static json serializeTournament(const Tournament& t) {
                 {"leg1Played", m.leg1Played},
                 {"leg2Played", m.leg2Played},
                 {"isFinal", m.isFinal},
+                {"leg1Date", m.leg1Date},
+                {"leg2Date", m.leg2Date},
                 {"winner", m.winner ? m.winner->name : ""}
             });
         }
@@ -75,6 +97,8 @@ static void deserializeTournament(const json& jt, Tournament& t, Database* db) {
                     m.leg1Played = jm.value("leg1Played", false);
                     m.leg2Played = jm.value("leg2Played", false);
                     m.isFinal = jm.value("isFinal", false);
+                    m.leg1Date = jm.value("leg1Date", "");
+                    m.leg2Date = jm.value("leg2Date", "");
                     std::string wName = jm.value("winner", "");
                     m.winner = db ? db->getClub("", wName) : nullptr;
                     r.matches.push_back(m);
@@ -153,7 +177,8 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
                     {"draws", c.draws},
                     {"losses", c.losses},
                     {"goalsFor", c.goalsFor},
-                    {"goalsAgainst", c.goalsAgainst}
+                    {"goalsAgainst", c.goalsAgainst},
+                    {"form", c.form}
                 });
             }
             j["database"]["leagues"].push_back(jLeague);
@@ -222,6 +247,10 @@ bool SaveManager::saveGame(const std::string& filepath, Player* p, CareerManager
         }
     }
     
+    // Sign the content, then embed the signature.
+    j.erase("sig");
+    j["sig"] = saveSig(j);
+
     std::ofstream o(filepath);
     if (o.is_open()) {
         o << j.dump(4);
@@ -240,7 +269,20 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
     } catch (...) {
         return false;
     }
-    
+
+    // Reject a tampered save (a signed save whose content was edited). Older saves without a
+    // signature are still accepted; they get signed on the next save. (Stats are also clamped to
+    // legitimate bounds below, so even an unsigned save can't grant impossible attributes.)
+    if (j.contains("sig")) {
+        std::string provided = j.value("sig", "");
+        json tmp = j;
+        tmp.erase("sig");
+        if (saveSig(tmp) != provided) {
+            LOG_WARN("Save signature mismatch - refusing tampered save: " << filepath);
+            return false;
+        }
+    }
+
     if (p && j.contains("player")) {
         auto jp = j["player"];
         p->name = jp.value("name", "Player");
@@ -278,7 +320,18 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
                 p->achievements.push_back(ach.get<std::string>());
             }
         }
-        
+
+        // Anti-cheat clamp: an attribute can never exceed the potential cap (or 99), and the cap
+        // itself is bounded. Defeats hand-edited "5000 in every stat" saves outright.
+        p->potential = std::clamp(p->potential, 1, 99);
+        int cap = std::min(99, p->potential);
+        p->shooting    = std::clamp(p->shooting, 1, cap);
+        p->passing     = std::clamp(p->passing, 1, cap);
+        p->tackling    = std::clamp(p->tackling, 1, cap);
+        p->goalkeeping = std::clamp(p->goalkeeping, 1, cap);
+        p->dribbling   = std::clamp(p->dribbling, 1, cap);
+        if (p->experience < 0) p->experience = 0;
+
         // We will resolve currentClub after loading the database,
         // because the database will clear and rebuild its clubs, invalidating pointers.
     }
@@ -313,6 +366,7 @@ bool SaveManager::loadGame(const std::string& filepath, Player* p, CareerManager
                     c.losses = jClub.value("losses", 0);
                     c.goalsFor = jClub.value("goalsFor", 0);
                     c.goalsAgainst = jClub.value("goalsAgainst", 0);
+                    c.form = jClub.value("form", std::string());
                     newL.clubs.push_back(c);
                 }
                 db->m_leagues.push_back(newL);

@@ -1,6 +1,7 @@
 #include "MatchScreen.h"
 #include "GameManager.h"
 #include "AssetManager.h"
+#include "AudioManager.h"
 #include "Player.h"
 #include "Settings.h"
 #include "UITheme.h"
@@ -48,6 +49,30 @@ void MatchScreen::resetToKickoff() {
     }
     m_dots[kickerIdx].targetPos = sf::Vector2f(440.f, 290.f);
     m_dots[kickerIdx].shape.setPosition(m_dots[kickerIdx].targetPos);
+
+    m_possessionLock = 0.f; m_possessionTeam = -1; // a goal / kick-off clears any turnover spell
+}
+
+// A turnover with consequence: the side that won the ball keeps it and drives forward for a spell,
+// instead of open play flipping it straight back on the next momentum roll. Called when you're
+// robbed or a pass is cut out.
+void MatchScreen::beginTurnoverPossession(bool winnerIsHome) {
+    m_possessionTeam = winnerIsHome ? 0 : 1;
+    m_possessionLock = 5.0f;
+    m_engine->applyMomentum(winnerIsHome ? 16.f : -16.f); // swing the bar to the side that won it
+
+    // Start the spell with a real outfielder of the winning side who is actually near the ball,
+    // so it isn't handed to a formation-slot repick that could drift possession straight back.
+    int base = winnerIsHome ? 0 : 11;
+    sf::Vector2f bp = m_visualBall.getPosition();
+    int nearest = -1; float best = 1e9f;
+    for (int i = base + 1; i < base + 11; ++i) { // outfielders only (keeper is base + 0)
+        if (hasRedCard(i)) continue;
+        sf::Vector2f d = m_dots[i].shape.getPosition() - bp;
+        float dd = std::hypot(d.x, d.y);
+        if (dd < best) { best = dd; nearest = i; }
+    }
+    if (nearest >= 0) m_ballCarrierIdx = nearest;
 }
 
 void MatchScreen::updateAmbientShape() {
@@ -135,6 +160,13 @@ void MatchScreen::updateDotMotion(float dt) {
     // for the whole duration of an episode every player except the user stood frozen.
     // It now runs in both paths; updateMinigameAI() supplies fresh targets during a
     // minigame, since the scripts aren't ticking then.
+
+    // A rushing AI keeper must not leave his own penalty box. Only the user's OWN keeper is
+    // exempt (a human keeper may roam); the opponent's AI keeper stays boxed even then.
+    Player* up = m_gameManager->getPlayer();
+    int userGkIdx = (up && up->position == PlayerPosition::Goalkeeper)
+                    ? (m_engine->isHome() ? 0 : 11) : -1;
+
     for (size_t i = 0; i < m_dots.size(); ++i) {
         // The user drives their own dot directly (WASD in updateMinigame); pulling it
         // toward a scripted target here as well would fight the player for control.
@@ -150,6 +182,14 @@ void MatchScreen::updateDotMotion(float dt) {
         } else {
             d.targetPos.x = std::clamp(d.targetPos.x, 26.f, 846.f);
             d.targetPos.y = std::clamp(d.targetPos.y, 116.f, 464.f);
+        }
+
+        // Keep an AI keeper inside his own penalty area (home defends the left box, away the
+        // right). The user's keeper is exempt. Boxes: x within 110px of the goal line, y 200..380.
+        if ((int)i % 11 == 0 && (int)i != userGkIdx) {
+            bool homeGk = ((int)i == 0);
+            d.targetPos.x = std::clamp(d.targetPos.x, homeGk ? 36.f : 730.f, homeGk ? 150.f : 844.f);
+            d.targetPos.y = std::clamp(d.targetPos.y, 200.f, 380.f);
         }
 
         sf::Vector2f dir = d.targetPos - d.shape.getPosition();
@@ -244,12 +284,18 @@ void MatchScreen::updateMinigameAI(float dt) {
         sf::Vector2f perp(-toGoal.y, toGoal.x);
         for (size_t k = 0; k < byDist.size() && k < 2; ++k) {
             int idx = byDist[k].second;
-            // First man tight and central (blocks the lane), second holds off and to one side
-            // as cover instead of stacking on the same spot.
-            float ahead = (k == 0) ? 20.f : 40.f;
-            float side  = (k == 0) ? 0.f  : 30.f;
-            m_dots[idx].targetPos = ballPos + toGoal * ahead + perp * side;
-            m_dots[idx].speed = chaseSpeed;
+            if (k == 0) {
+                // The nearest man goes STRAIGHT for the ball (an interception run), sprinting
+                // faster than a walking carrier so a straight stroll is actually closed down and
+                // the tackle below can commit. Still slower than a Q dash (210), so beating your
+                // man gets you clear - that's the counter to the press.
+                m_dots[idx].targetPos = ballPos;
+                m_dots[idx].speed = std::max(chaseSpeed, 178.f);
+            } else {
+                // Second man covers goal-side and off to one flank, in case the first is beaten.
+                m_dots[idx].targetPos = ballPos + toGoal * 40.f + perp * 30.f;
+                m_dots[idx].speed = chaseSpeed;
+            }
         }
     }
 
@@ -307,15 +353,17 @@ void MatchScreen::updateMinigameAI(float dt) {
     // (userOnBall computed above). When he's defending (Tackle/Save) the opponent already
     // has it, so there's nothing to lose here.
 
-    // A committed action is untouchable: the player has already planted his foot, and
-    // sniping the ball mid-QTE would punish someone who did everything right.
-    if (!userOnBall || m_qte.isActive() || byDist.empty()) return;
+    // A committed action is untouchable: the player has already planted his foot, and sniping the
+    // ball mid-QTE - or while he's drawing/powering a shot or pass (m_shotStage) - would punish
+    // someone who did everything right, and would turn his shot into a "robbed of possession"
+    // turnover that never counts as a shot. So once he commits to an action, let it play out.
+    if (!userOnBall || m_qte.isActive() || m_shotStage != ShotStage::None || byDist.empty()) return;
 
     // Grace period. The attack scripts hand over control with a defender already right on
     // top of the carrier (~15px), so the player needs a real window to shoot or pass
     // before anyone can rob him - otherwise it feels like the ball is taken the instant
     // control arrives. Long enough to comfortably start an action.
-    const float GRACE = 2.2f;
+    const float GRACE = 1.5f;
     if (m_minigameTimer < GRACE) return;
 
     // Once the ball has been struck it's gone - nobody "tackles" a shot that's already
@@ -327,20 +375,24 @@ void MatchScreen::updateMinigameAI(float dt) {
     m_tackleAttemptTimer -= dt;
     if (m_tackleAttemptTimer > 0.f) return;
 
-    // The nearest presser now jockeys a step off the ball (~20px) rather than climbing onto
-    // it, so allow a lunge from that range - otherwise he'd hover forever and never commit.
+    // The nearest presser jockeys a step off the ball (~20px) rather than climbing onto it,
+    // so allow a lunge from that range - otherwise he'd hover forever and never commit.
     float gap = byDist[0].first;
-    if (gap > 26.f) return;
+    if (gap > 30.f) return;
 
     // One attempt roughly every second, not one per frame.
     m_tackleAttemptTimer = 1.0f;
 
-    // Contact isn't an automatic steal - weigh their tackling against our ball control,
-    // and keep the ceiling low enough that dwelling on the ball is risky but not a
-    // guaranteed loss.
-    int duel = 28 + (oppStrength - (p->passing + p->shooting) / 2) / 2;
+    // Contact isn't an automatic steal - weigh their tackling against how well you SHIELD the
+    // ball, which is a dribbling skill (a striker shouldn't stroll through midfield just because
+    // he finishes well). Crucially, the pressure RAMPS the longer you dwell on the ball without
+    // acting: walking in a straight line to the box is no longer safe - hold it too long and
+    // you get robbed, so you have to actually pass, shoot, or beat your man (Q dash).
+    int resist = p->dribbling;
+    int duel = 30 + (oppStrength - resist) / 2;
     duel += (g_settings.difficulty - 1) * 6; // Hard: opponents rob you more; Easy: less
-    duel = std::clamp(duel, 8, 55);
+    duel += (int)std::clamp((m_minigameTimer - GRACE) * 10.f, 0.f, 35.f); // dwell pressure
+    duel = std::clamp(duel, 10, 82);
     if ((rand() % 100) >= duel) return;
 
     // Robbed by a closing opponent while dwelling on the ball - a turnover, so the log
@@ -436,6 +488,7 @@ void MatchScreen::beginFoul(bool offenderIsHome) {
     if (m_minigameActive) {
         endMinigame();
     }
+    AudioManager::get().sfx("whistle_short_" + std::to_string(1 + rand() % 4)); // ref blows for the foul
 
     m_foulOffenderIsHome = offenderIsHome;
 
@@ -609,6 +662,7 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
     m_fkWallCount = 0;
     m_fkKeeperIdx = -1;
     m_fkUserTaker = false;
+    m_penKeepOut.clear();
 
     if (m_fkDirect) {
         // Let the user take his side's dangerous free kicks - he's the one you want on the
@@ -626,10 +680,27 @@ void MatchScreen::setupFreeKick(bool offenderIsHome) {
         m_fkKeeperIdx = dBase; // local 0 = keeper
 
         if (m_fkPenalty) {
-            // Ball on the spot, no wall - everyone else just has to stand off.
+            // Ball on the spot (11m ~ 84px out), no wall.
             spot = sf::Vector2f(fouledIsHome ? (goalLineX - 84.f) : (goalLineX + 84.f), 290.f);
             m_visualBall.setPosition(spot);
             m_ballTarget = spot;
+
+            // Everyone except the taker and the keepers must stand OUTSIDE the box, behind the
+            // ball. Line them up just beyond the box edge, spread across the pitch (two depths).
+            float dir = fouledIsHome ? -1.f : 1.f;                 // toward midfield = "behind" the ball
+            float boxEdge = fouledIsHome ? (goalLineX - 126.f) : (goalLineX + 126.f);
+            std::vector<int> outs;
+            for (int i = 0; i < (int)m_dots.size(); ++i) {
+                if (i % 11 == 0 || i == taker || hasRedCard(i)) continue; // keepers + taker stay put
+                outs.push_back(i);
+            }
+            for (size_t k = 0; k < outs.size(); ++k) {
+                float t = outs.size() > 1 ? (float)k / (outs.size() - 1) : 0.5f;
+                sf::Vector2f pos(boxEdge + dir * (16.f + (k % 2) * 24.f), 178.f + t * 224.f);
+                m_dots[outs[k]].targetPos = pos;
+                m_dots[outs[k]].speed = 150.f;
+                m_penKeepOut.push_back({outs[k], pos});
+            }
         } else {
             // Direction from ball to the goal being attacked.
             sf::Vector2f toGoal(attackGoalX - spot.x, 290.f - spot.y);
@@ -913,6 +984,7 @@ void MatchScreen::strikeFreeKick(bool success, ActionVariant variant) {
     m_fkVariant = variant;
     m_fkStruck = true;
     m_stateTimer = 0.f;
+    AudioManager::get().kick();
 
     m_ballCarrierIdx = -1;
     m_fkHitWall = false;
@@ -992,6 +1064,7 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
     dt *= matchSpeedMult(g_settings.matchSpeed);
 
     m_stateTimer += dt;
+    if (m_possessionLock > 0.f) m_possessionLock -= dt; // turnover possession spell counts down
     float mom = 0.0f;
     if (!m_engine->getMomentumHistory().empty()) mom = m_engine->getMomentumHistory().back();
 
@@ -1068,8 +1141,14 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             m_dots[i].speed = 55.f;
         }
         
+        // While a turnover possession spell is live, the side that won the ball keeps it - open
+        // play doesn't get to flip it back on the momentum roll below.
+        bool lockActive = (m_possessionLock > 0.f && m_possessionTeam >= 0);
+
         if (m_ballCarrierIdx == -1 || (rand() % 100 < 2 && std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y) < 10.f)) {
-            bool pickHome = (mom > 0); if (mom == 0) pickHome = (rand()%2 == 0);
+            bool pickHome;
+            if (lockActive) pickHome = (m_possessionTeam == 0);
+            else { pickHome = (mom > 0); if (mom == 0) pickHome = (rand()%2 == 0); }
             // Bounded retry: an unbounded do/while here hard-freezes the app (window won't
             // even close) if every candidate happens to be sent off.
             for (int tries = 0; tries < 24; ++tries) {
@@ -1078,8 +1157,18 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             }
         }
         m_ballTarget = m_dots[m_ballCarrierIdx].shape.getPosition();
-        
-    } 
+
+        // The winner drives the ball forward toward the goal he's attacking - a real counter,
+        // not a stroll back into shape - so a turnover actually turns into pressure.
+        if (lockActive) {
+            float goalX = (m_possessionTeam == 0) ? 845.f : 35.f; // home attacks right, away left
+            sf::Vector2f cur = m_dots[m_ballCarrierIdx].shape.getPosition();
+            float dirX = (goalX > cur.x) ? 1.f : -1.f;
+            m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(
+                std::clamp(cur.x + dirX * 140.f, 60.f, 820.f), cur.y);
+            m_dots[m_ballCarrierIdx].speed = 130.f;
+        }
+    }
     else if (m_visualState == VisualState::Attacking) {
         updateAttackEpisode(dt);
     }
@@ -1114,6 +1203,14 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                 m_foulClock = 0.f;
 
                 sf::Vector2f contact((offPos.x + vicPos.x) * 0.5f, (offPos.y + vicPos.y) * 0.5f);
+                // The free kick must be given where the ball actually was, not wherever the duel
+                // pair happened to be. If the chosen offender/victim are far from the ball, their
+                // midpoint would fling it across the pitch - so keep the incident within reach of
+                // the real spot (m_ballTarget, which beginFoul left on the ball).
+                sf::Vector2f spot = m_ballTarget;
+                sf::Vector2f delta = contact - spot;
+                float dlen = std::hypot(delta.x, delta.y);
+                if (dlen > 55.f) contact = spot + delta * (55.f / dlen);
                 m_visualBall.setPosition(contact);
                 m_ballTarget = contact;
 
@@ -1204,6 +1301,12 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                 m_dots[idx].speed = 150.f;
             }
         }
+        // Keep everyone out of the box for a penalty (ambient would pull them back in).
+        for (auto& kp : m_penKeepOut)
+            if (kp.first >= 0 && kp.first < (int)m_dots.size()) {
+                m_dots[kp.first].targetPos = kp.second;
+                m_dots[kp.first].speed = 150.f;
+            }
 
         // Hold the dead ball for a beat so the foul actually reads as a foul: the whistle
         // goes, everything settles on the spot, the taker walks up, and only then is it
@@ -1447,6 +1550,12 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
                 m_dots[idx].speed = 60.f;
             }
         }
+        // Penalty: keep everyone else out of the box through the kick too.
+        for (auto& kp : m_penKeepOut)
+            if (kp.first >= 0 && kp.first < (int)m_dots.size()) {
+                m_dots[kp.first].targetPos = kp.second;
+                m_dots[kp.first].speed = 90.f;
+            }
 
         if (!m_fkStruck) {
             // Hold the ball on the spot; the taker stands over it.
@@ -1509,6 +1618,19 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
     }
     
     float globalBDist = std::hypot(m_ballTarget.x - m_visualBall.getPosition().x, m_ballTarget.y - m_visualBall.getPosition().y);
+
+    // Track an aerial flight for long deliveries with nobody carrying the ball. The curve-shot and
+    // loft-timer paths own the ball when active, so defer to them.
+    if (m_ballCarrierIdx != -1 || m_shotCurveActive || m_ballLoftTimer > 0.f) {
+        m_ballAirborne = false;
+    } else if (!m_ballAirborne && globalBDist > 140.f) {
+        m_ballAirborne = true;
+        m_ballAirFrom = m_visualBall.getPosition();
+        m_ballAirLen = globalBDist;
+    } else if (m_ballAirborne && globalBDist < 12.f) {
+        m_ballAirborne = false;
+    }
+
     if (m_ballCarrierIdx != -1 && globalBDist < 10.f) {
         m_visualBall.setPosition(m_ballTarget); // Snap rigidly if close and held
     } else if (globalBDist > 0.f) {
@@ -1522,6 +1644,14 @@ void MatchScreen::updateVisuals(sf::Time deltaTime) {
             else if (m_cornerStruck && !m_cornerHeaded) bspeed = 300.f;
         }
         float moveDist = bspeed * dt;
+        // A delivery in flight (nobody carrying it - a pass/cross/through-ball is released with
+        // carrier == -1 until it arrives) eases into its target over the last stretch instead of
+        // arriving at full pace and dead-stopping in the air. A CARRIED ball must keep tight to its
+        // carrier, so it is never eased - otherwise it visibly trails a step behind the dribbler.
+        if (m_ballCarrierIdx == -1) {
+            float ease = std::clamp(globalBDist / 55.f, 0.30f, 1.f);
+            moveDist *= ease;
+        }
         if (moveDist >= globalBDist) {
             m_visualBall.setPosition(m_ballTarget);
         } else {
@@ -1804,6 +1934,11 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     float wantFwd = (boxX - 440.f) * dir;
                     float tgtFwd = m_offsideRun ? (lineFwd + 40.f) : std::min(wantFwd, lineFwd - 12.f);
                     sf::Vector2f crossTarget(440.f + tgtFwd * dir, m_shotTargetY);
+                    // Never let him receive on top of the keeper: keep clear of the goal line even
+                    // when the defence sits deep (which drags the offside line near the goal).
+                    float goalX = aHome ? 845.f : 35.f;
+                    crossTarget.x = aHome ? std::min(crossTarget.x, goalX - 62.f)
+                                          : std::max(crossTarget.x, goalX + 62.f);
                     m_dots[m_attackFwdIdx].targetPos = crossTarget;
                     m_dots[m_attackFwdIdx].speed = 150.f;
 
@@ -1853,6 +1988,9 @@ void MatchScreen::runEpisodeSetup(float dt, const EpisodeCtx& ctx) {
                     float wantFwd = (boxX - 440.f) * dir;
                     float tgtFwd = m_offsideRun ? (lineFwd + 40.f) : std::min(wantFwd, lineFwd - 12.f);
                     sf::Vector2f runTarget(440.f + tgtFwd * dir, m_shotTargetY);
+                    float goalX = aHome ? 845.f : 35.f;
+                    runTarget.x = aHome ? std::min(runTarget.x, goalX - 62.f)
+                                        : std::max(runTarget.x, goalX + 62.f);
                     m_dots[m_attackFwdIdx].targetPos = runTarget;
                     m_dots[m_attackFwdIdx].speed = 200.f; // making the run
 
@@ -2041,6 +2179,12 @@ void MatchScreen::runShotResolution(float dt, const EpisodeCtx& ctx) {
                     if (ctx.isGoal) {
                         m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(860.f, targetY) : sf::Vector2f(20.f, targetY);
                         m_dots[ctx.defenderBase].targetPos = m_pendingEvent.isHome ? sf::Vector2f(810.f, targetY > 290.f ? 250.f : 330.f) : sf::Vector2f(70.f, targetY > 290.f ? 250.f : 330.f);
+                        // Count the goal the instant the ball crosses the line, not on a fixed timer.
+                        float bx = m_visualBall.getPosition().x;
+                        if (m_pendingEvent.isHome ? (bx >= 840.f) : (bx <= 40.f)) {
+                            m_attackPhase = Beat::Resolve;
+                            m_stateTimer = 0.f;
+                        }
                     } else if (ctx.isSave) {
                         m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(810.f, targetY) : sf::Vector2f(70.f, targetY);
                         m_dots[ctx.defenderBase].targetPos = m_ballTarget;
@@ -2076,8 +2220,10 @@ void MatchScreen::runShotResolution(float dt, const EpisodeCtx& ctx) {
                 if (ctx.isGoal) {
                     m_visualState = VisualState::GoalCelebration;
                     m_stateTimer = 0.f;
-                    float targetY = m_shotTargetY;
-                    m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(860.f, targetY > 290.f ? 330.f : 250.f) : sf::Vector2f(20.f, targetY > 290.f ? 330.f : 250.f);
+                    // Let the ball carry into the net at the height it crossed, decelerating there,
+                    // instead of veering to a corner - reads as physics, not a magnet to the post.
+                    float ny = std::clamp(m_shotTargetY, 256.f, 324.f);
+                    m_ballTarget = m_pendingEvent.isHome ? sf::Vector2f(858.f, ny) : sf::Vector2f(22.f, ny);
                 } else if (ctx.isSave && rand() % 100 < 45) {
                     // The keeper turned it behind - corner rather than a goal kick. This is
                     // where most corners come from, so it's what makes them show up at all.
@@ -2104,6 +2250,31 @@ void MatchScreen::runMidfielderPass(float dt, const EpisodeCtx& ctx) {
                 float advanceX = m_engine->isHome() ? 650.f : 230.f;
                 m_dots[m_ballCarrierIdx].targetPos = sf::Vector2f(advanceX, curPos.y);
                 m_dots[m_ballCarrierIdx].speed = 140.f;
+
+                // Keep the scene alive while you carry it into space: the nearest opponent closes
+                // you down (jockeying goal-side, not standing on you), so it reads as a contest
+                // rather than everyone frozen until the minigame arms - and the press is already
+                // set when it does.
+                {
+                    sf::Vector2f bp = curPos;
+                    int oppBase = m_engine->isHome() ? 11 : 0;
+                    int nearest = -1; float best = 1e9f;
+                    for (int i = oppBase; i < oppBase + 11; ++i) {
+                        if (i % 11 == 0 || hasRedCard(i)) continue;
+                        sf::Vector2f d = m_dots[i].shape.getPosition() - bp;
+                        float dd = std::hypot(d.x, d.y);
+                        if (dd < best) { best = dd; nearest = i; }
+                    }
+                    if (nearest >= 0) {
+                        float goalX = m_engine->isHome() ? 845.f : 35.f;
+                        sf::Vector2f toGoal(goalX - bp.x, 290.f - bp.y);
+                        float gl = std::hypot(toGoal.x, toGoal.y);
+                        if (gl > 1.f) { toGoal.x /= gl; toGoal.y /= gl; }
+                        m_dots[nearest].targetPos = bp + toGoal * 22.f;
+                        m_dots[nearest].speed = 135.f;
+                    }
+                }
+
                 if (m_stateTimer > 1.0f && !m_minigameActive) {
                     m_stateTimer = 0.f;
                     m_engine->triggerMinigame();

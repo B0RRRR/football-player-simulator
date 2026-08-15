@@ -1,6 +1,7 @@
 #include "DrillArena.h"
 #include "ShotPath.h"
 #include "PitchRenderer.h"
+#include "../core/AudioManager.h"
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
@@ -21,6 +22,7 @@ sf::Vector2f DrillArena::moveToward(sf::Vector2f from, sf::Vector2f to, float st
 
 DrillArena::DrillArena(Kind kind, int primaryStat, int dribbling, int keeperStrength)
     : m_kind(kind), m_primaryStat(primaryStat), m_dribbling(dribbling), m_keeperStrength(keeperStrength) {
+    PitchRenderer::resetAnim(); // fresh player animation state for this drill
     setupRep();
 }
 
@@ -180,6 +182,7 @@ void DrillArena::launchShot() {
         if (len > 0.1f) m_endDir = {d.x / len, d.y / len};
     }
     m_flightSpeed = 520.f + m_powerT * 520.f;
+    AudioManager::get().kick();
     sf::Vector2f last = m_path.back();
     float toLine = m_endDir.x != 0.f ? (RIGHT_GOAL_X - last.x) / m_endDir.x : 0.f;
     m_shotTargetY = (toLine > 0.f) ? last.y + m_endDir.y * toLine : last.y;
@@ -194,6 +197,7 @@ void DrillArena::launchPass() {
         if (len > 0.1f) m_endDir = {d.x / len, d.y / len};
     }
     m_flightSpeed = 230.f + m_powerT * 340.f;
+    AudioManager::get().kick();
     m_flightDist = 0.f; m_phase = Phase::Flight;
 }
 
@@ -395,6 +399,7 @@ void DrillArena::update(float dt) {
                         m_ball = m_attacker;
                         float len = std::hypot(LEFT_GOAL_X - m_ball.x, 0.f);
                         m_flightSpeed = frand(0.75f, 2.0f) * std::max(len * 1.5f, 280.f);
+                        AudioManager::get().kick(); // the attacker strikes at your goal
                     } else if (m_feintClock > frand(0.45f, 0.85f) && m_markers.size() > 1) {
                         // Knock it to a different attacker.
                         int to = rand() % (int)m_markers.size();
@@ -439,21 +444,22 @@ void DrillArena::draw(sf::RenderWindow& window) {
     if ((m_phase == Phase::Aiming || m_phase == Phase::Power))
         PitchRenderer::drawPath(window, m_path);
 
-    // Scene dots per kind.
+    // Scene players per kind (stable ids: user=0, keeper=1, attacker=2, markers 10+, mates 30+).
+    const sf::Color kMe(45, 95, 235), kOpp(232, 60, 60), kGk(245, 140, 20);
     if (m_kind == Kind::ForwardFinish) {
-        for (auto& df : m_markers) PitchRenderer::drawDot(window, df, false);
-        PitchRenderer::drawDot(window, m_keeper, false);
-        PitchRenderer::drawDot(window, m_user, true, true);
+        for (size_t i = 0; i < m_markers.size(); ++i) PitchRenderer::drawPlayer(window, 10 + (int)i, m_markers[i], kOpp);
+        PitchRenderer::drawPlayer(window, 1, m_keeper, kGk);
+        PitchRenderer::drawPlayer(window, 0, m_user, kMe, true);
     } else if (m_kind == Kind::DefenderDuel) {
-        PitchRenderer::drawDot(window, m_attacker, false);
-        PitchRenderer::drawDot(window, m_user, true, true);
+        PitchRenderer::drawPlayer(window, 2, m_attacker, kOpp);
+        PitchRenderer::drawPlayer(window, 0, m_user, kMe, true);
     } else if (m_kind == Kind::GoalkeeperSave) {
-        for (auto& a : m_markers) PitchRenderer::drawDot(window, a, false);
-        PitchRenderer::drawDot(window, m_user, true, true);
+        for (size_t i = 0; i < m_markers.size(); ++i) PitchRenderer::drawPlayer(window, 10 + (int)i, m_markers[i], kOpp);
+        PitchRenderer::drawPlayer(window, 0, m_user, kMe, true);
     } else { // MidfielderPass
-        for (auto& mk : m_markers) PitchRenderer::drawDot(window, mk, false);
-        for (auto& mt : m_mates)   PitchRenderer::drawDot(window, mt, true);
-        PitchRenderer::drawDot(window, m_user, true, true);
+        for (size_t i = 0; i < m_markers.size(); ++i) PitchRenderer::drawPlayer(window, 10 + (int)i, m_markers[i], kOpp);
+        for (size_t i = 0; i < m_mates.size(); ++i)   PitchRenderer::drawPlayer(window, 30 + (int)i, m_mates[i], kMe);
+        PitchRenderer::drawPlayer(window, 0, m_user, kMe, true);
     }
     PitchRenderer::drawBall(window, m_ball);
 

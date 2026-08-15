@@ -81,6 +81,7 @@ public:
     virtual void draw(sf::RenderWindow& window) override;
     bool playsClickOnPress() const override { return false; } // match drives its own audio
     bool wantsMenuMusic() const override { return false; }     // silence menu music during the match
+    bool wantsMatchAmbience() const override { return true; }   // stadium ambience during the match
 
 private:
     void initMinigame();
@@ -216,6 +217,9 @@ private:
     sf::Vector2f m_fkWallPos[4];     // where each wall defender must stand (re-asserted vs ambient)
     int m_fkWallCount = 0;
     ActionVariant m_fkVariant = ActionVariant::Default;
+    // Penalty: everyone except the taker and the two keepers must stand OUTSIDE the box behind
+    // the ball. These spots are held each frame (ambient would otherwise pull them into the box).
+    std::vector<std::pair<int, sf::Vector2f>> m_penKeepOut;
 
     void strikeFreeKick(bool success, ActionVariant variant);
     void registerFreeKickOutcome();
@@ -271,6 +275,27 @@ private:
     
     // 2D Pitch Elements. The pitch geometry itself is drawn by PitchRenderer (shared with the
     // training drills); only the moving pieces (dots, ball) are held here as position state.
+    sf::Color m_homeShirt = sf::Color(45, 95, 235); // kit colours, resolved in init (clash-safe)
+    sf::Color m_awayShirt = sf::Color(232, 60, 60);
+    sf::Color m_homeKeeperShirt = sf::Color(245, 140, 20); // keepers wear a distinct colour
+    sf::Color m_awayKeeperShirt = sf::Color(225, 55, 175);
+    int m_prevHomeScore = 0, m_prevAwayScore = 0; // watched to fire crowd cheer/groan on goals
+    bool m_fullTimeWhistled = false;
+    // A ball-strike sound whenever ANY player releases/passes the ball (the carrier changes),
+    // not just the user. Cooldown so a rapid reassignment doesn't machine-gun.
+    int m_prevCarrier = -1;
+    float m_kickCd = 0.f;
+    sf::Vector2f m_prevBallPos;   // for a ball-strike sound on velocity spikes (shots/headers)
+    float m_prevBallSpeed = 0.f;
+
+    // Half-time. At 45' the sim pauses on a stats overlay; the player starts the second half,
+    // in which the teams switch ends - done purely by mirroring the pitch's x on screen and on
+    // pitch input (internal coordinates/logic are unchanged), so home still "attacks right"
+    // internally but appears to attack left.
+    bool m_halfTime = false;   // paused on the interval screen
+    bool m_secondHalf = false; // ends are swapped (mirror the pitch)
+    sf::FloatRect m_secondHalfBtn;
+    float flipX(float x) const { return m_secondHalf ? (880.f - x) : x; }
     std::vector<PlayerDot> m_dots;
     sf::CircleShape m_visualBall;
     sf::Vector2f m_ballTarget;
@@ -330,6 +355,7 @@ private:
     float m_shotPowerT = 0.f;            // 0..1 power marker
     float m_shotPowerDir = 1.f;
 
+    bool  m_shotWideCalled = false;      // miss/post SFX already played for the current shot
     bool  m_shotCurveActive = false;     // the struck ball is travelling the path
     float m_shotFlightDist = 0.f;        // distance covered along the path so far
     float m_shotFlightSpeed = 600.f;     // px/s, from the power bar
@@ -413,6 +439,21 @@ private:
     ActionVariant m_pendingVariant = ActionVariant::Default;
     MinigameActionKind m_pendingKind = MinigameActionKind::Shot;
     float m_ballLoftTimer = 0.f;
+    float m_shotArc = 0.f; // vertical arc height of the current drawn shot (some low, some rise)
+
+    // A general aerial arc for long, un-carried deliveries (crosses, long balls, goal kicks): the
+    // glide toward m_ballTarget records where the flight began and its length, so draw() can lift
+    // the ball on a parabola over its path.
+    bool m_ballAirborne = false;
+    sf::Vector2f m_ballAirFrom;
+    float m_ballAirLen = 0.f;
+
+    // Turnover possession: when a side wins the ball (you're robbed, or a bad pass is cut out),
+    // it KEEPS possession and drives forward for a spell instead of open play flipping the ball
+    // straight back. m_possessionTeam is 0 = home / 1 = away; the lock counts down in seconds.
+    float m_possessionLock = 0.f;
+    int m_possessionTeam = -1;
+    void beginTurnoverPossession(bool winnerIsHome); // hand the ball to the winner for a real spell
 
     // Dribble (take on the nearest opponent) while carrying the ball, on the Q key. Polled
     // in updateMinigame (edge-triggered) rather than off key events, which don't reliably

@@ -60,8 +60,8 @@ std::string SettingsScreen::currentValue(const std::string& action) const {
 }
 
 void SettingsScreen::cycleResolution() {
-    static const unsigned presets[][2] = {{1280, 720}, {1600, 900}, {1920, 1080}};
-    const int n = 3;
+    static const unsigned presets[][2] = {{1280, 720}, {1600, 900}, {1920, 1080}, {2560, 1440}};
+    const int n = 4;
     int cur = 0;
     for (int i = 0; i < n; ++i)
         if (presets[i][0] == g_settings.resWidth && presets[i][1] == g_settings.resHeight) cur = i;
@@ -86,7 +86,7 @@ void SettingsScreen::activate(const std::string& action) {
         if (SaveManager::saveGame("savegame.json", m_gameManager->getPlayer(),
                                   m_gameManager->getCareerManager(), &m_gameManager->getDatabase())) {
             m_saveFlash = 2.0f;
-            std::cout << "Game saved successfully!\n";
+            AudioManager::get().sfx("confirm");
         }
     } else if (action == "Back") {
         g_settings.save();
@@ -144,7 +144,7 @@ void SettingsScreen::handleInput(sf::RenderWindow& window, const sf::Event& even
 
     if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Left) {
         if (!m_dragAction.empty()) {
-            if (m_dragAction == "Sound") AudioManager::get().sfx("ui_confirm"); // preview level
+            if (m_dragAction == "Sound") AudioManager::get().sfx("confirm"); // preview level
             m_dragAction.clear();
             g_settings.save(); // persist the new volume
             return;

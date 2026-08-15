@@ -37,7 +37,12 @@ struct Club {
     int losses = 0;
     int goalsFor = 0;
     int goalsAgainst = 0;
-    
+
+    // Rolling record of the last five results, oldest first, each 'W' / 'D' / 'L'. Drives the
+    // pre-match form dots. Updated wherever a result is applied to the table.
+    std::string form;
+    void recordResult(char r) { form.push_back(r); if (form.size() > 5) form.erase(form.begin()); }
+
     std::vector<AIPlayer*> roster;
 };
 
@@ -59,6 +64,8 @@ struct CupMatch {
     bool leg2Played = false;
     bool isFinal = false;
     Club* winner = nullptr;
+    std::string leg1Date; // calendar date each leg was played (single-match ties use leg1Date only)
+    std::string leg2Date;
 };
 
 struct CupRound {

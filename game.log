@@ -1,0 +1,24 @@
+[18:31:04] INFO  ==== session start ====
+[18:31:04] INFO  Football Player Simulator starting up
+[18:31:05] INFO  Video: windowed 1280x720, difficulty=1, matchSpeed=1
+[18:31:05] INFO  Audio: loaded 24 sfx buffers (10 ball-strike variants)
+[18:31:05] INFO  Screen -> MenuScreen
+[18:31:07] INFO  Screen -> SettingsScreen
+[18:31:12] INFO  Screen -> MenuScreen
+[18:31:13] INFO  Screen -> CareerHubScreen
+[18:31:16] INFO  Advance day: day=6 week=0 type=Rest Day
+[18:31:16] INFO  Advance day: day=7 week=1 type=Rest Day
+[18:31:17] INFO  Advance day: day=8 week=1 type=Training
+[18:31:17] INFO  Advance day: day=9 week=1 type=Training
+[18:31:18] INFO  Advance day: day=10 week=1 type=Training
+[18:31:18] INFO  Advance day: day=11 week=1 type=Rest Day
+[18:31:19] INFO  Screen -> MatchPreviewScreen
+[18:31:20] INFO  Screen -> MatchScreen
+[18:31:20] INFO  Match kick-off: Grenoble Foot vs Rodez Aveyron (user home)
+[18:32:10] INFO  Screen -> MatchStatsScreen
+[18:32:10] INFO  Full time: 4 - 3
+[18:32:11] INFO  Advance day: day=12 week=1 type=League Match
+[18:32:11] INFO  Screen -> CareerHubScreen
+[18:32:13] INFO  Screen -> LeagueTableScreen
+[18:32:15] INFO  Screen -> CareerHubScreen
+[18:32:19] INFO  Clean shutdown

@@ -87,8 +87,29 @@ void EuropeanCupScreen::updateBracketVisuals() {
             } else {
                 bm.s1 = "vs"; bm.s2 = "";
             }
+
             br.matches.push_back(bm);
         }
+
+        // Every tie in a round is played on the same date(s), so the date belongs to the round, not
+        // the card. Prefer an actual played date; fall back to the planned European schedule (whose
+        // year only lines up for the live season, not history). Two-legged rounds join both dates.
+        {
+            bool twoLegged = false, canPlan = (m_currentView < 2) && !isHistory;
+            std::string d1, d2;
+            for (const auto& m : t.rounds[i].matches) {
+                if (!m.isFinal) twoLegged = true;
+                if (d1.empty() && !m.leg1Date.empty()) d1 = m.leg1Date;
+                if (d2.empty() && !m.leg2Date.empty()) d2 = m.leg2Date;
+            }
+            CareerManager* cm = m_gameManager->getCareerManager();
+            if (d1.empty() && canPlan) d1 = cm->europeanRoundDate((int)i, false);
+            if (twoLegged && d2.empty() && canPlan) d2 = cm->europeanRoundDate((int)i, true);
+            if (twoLegged && !d1.empty() && !d2.empty()) br.date = d1 + "  ·  " + d2;
+            else if (!d1.empty()) br.date = d1;
+            else if (!d2.empty()) br.date = d2;
+        }
+
         m_rounds.push_back(br);
     }
 
@@ -209,6 +230,9 @@ void EuropeanCupScreen::draw(sf::RenderWindow& window) {
         for (int r = 0; r < R; ++r) {
             float cx = colX(r);
             UIKit::drawText(window, font, {cx, ytop - 30.f}, UIKit::upper(m_rounds[r].name), 15, UITheme::Accent, 1.3f, true);
+            // Every tie in this round shares its date(s) - shown once, under the round title.
+            if (!m_rounds[r].date.empty())
+                UIKit::drawText(window, font, {cx, ytop - 14.f}, m_rounds[r].date, 11, UITheme::TextDim, 1.0f);
             for (int j = 0; j < (int)m_rounds[r].matches.size(); ++j) {
                 const BMatch& m = m_rounds[r].matches[j];
                 float cy = cyOf(r, j), cardY = cy - cardH * 0.5f;
